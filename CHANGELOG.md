@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- npm → bun for the front end (`bun.lock`, `bunx tauri`, `bun run build`)
+- Linux CI workflow (bun + cargo tests, .deb/AppImage on `linux-v*` tags), ahead of the
+  upstream Linux PRs (#42, #44)
+- OpenCode adapter upgraded to the verified SSE vocabulary from upstream PR #47:
+  session.created/idle/error/deleted, tool.execute.before/after, permission.asked shown
+  as observe-only notification
+- Frontend fixes adopted from upstream PRs before they merge: #43 (ticker rows overlap
+  on WebKitGTK — will-change removed, block layout, half-finished steps hold the frame
+  loop) and #56 (all view animations pause while the island is folded → 0 % CPU)
 - Linux-first maintenance docs: `docs/LINUX.md` (build on Mint 22.3, upstream-sync policy,
   conflict map) and `scripts/sync_upstream.sh` — analyses each sync and writes `SYNC-TODO.md`
   (overlap files, WIP warning, ported-fix candidates) so editing and merging stay cheap

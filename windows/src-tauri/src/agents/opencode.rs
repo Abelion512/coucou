@@ -6,13 +6,20 @@
 //   * `GET /global/health` → { healthy: true, version }
 //   * `GET /event` → SSE stream; first event is `server.connected`, then bus
 //     events; heartbeats keep the stream alive;
-//   * `GET /session` → Session[], `GET /session/status` → { id: {state,...} }.
+//   * `GET /session` → Session[].
+//
+// Event vocabulary cross-checked against upstream's own OpenCode integration
+// (Louis-CFM/coucou PR #47, `permission.asked`, `tool.execute.before/after`,
+// `session.created/idle/error`, `message.updated`). Properties ride one level
+// down, inside `properties`.
 //
 // House rules from the spec: an absent server means `unavailable`, never a
 // crash and never a block; reconnect with 1s→2s→4s→…→30s backoff; the port is
 // never hardcoded — it is discovered from env (`OPENCODE_PORT`, what the TUI
 // and `opencode serve` print) with 54321 as the audited fallback; idle is
-// 30 s without events. observe-only: nothing is ever sent to OpenCode.
+// 30 s without events. Observe-only: nothing is ever sent to OpenCode. Its
+// permission flow (`permission.asked`) is upstream's plugin approach; this
+// adapter deliberately has no write path at all.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -134,7 +141,7 @@ async fn stream_events(
                 }
             }
             _ = session_poll.tick() => {
-                poll_sessions(app, tx).await;
+                poll_sessions(tx).await;
             }
             _ = tokio::time::sleep_until(*last_activity + IDLE_AFTER) => {
                 let _ = tx
@@ -146,9 +153,11 @@ async fn stream_events(
     }
 }
 
-/// SSE envelope → AgentEvent. `server.connected` and `server.heartbeat` are
-/// verified real; the rest are mapped defensively — unknown shapes count as
-/// activity (they prove the server is alive) but never as UI content.
+/// SSE envelope → AgentEvent, on the vocabulary verified in upstream PR #47.
+/// `server.connected` / `server.heartbeat` are transport; the bus events that
+/// matter are `session.*`, `tool.execute.*` and `message.updated`. Anything
+/// unknown still counts as activity (it proves the server is alive) but never
+/// becomes UI content.
 async fn handle_event(
     app: &tauri::AppHandle,
     tx: &Sender<AgentEvent>,
@@ -157,6 +166,7 @@ async fn handle_event(
 ) {
     *last_activity = tokio::time::Instant::now();
     let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or_default().to_string();
+    let body = v.get("properties").cloned().unwrap_or(v.clone());
 
     match kind.as_str() {
         "server.connected" => {
@@ -170,60 +180,100 @@ async fn handle_event(
                 .await;
         }
         "server.heartbeat" => {}
-        _ => {
-            // Bus events carry their properties either at top level or under
-            // `properties`. Step-style events mention a tool/part; state-style
-            // events mention a status. Verified names must replace these once
-            // checked against a live run (spec §3.1).
-            let body = v.get("properties").cloned().unwrap_or(v.clone());
-            let state = body.get("state").and_then(|s| s.as_str());
-            match state {
-                Some("busy" | "running" | "start") => {
-                    let _ = tx
-                        .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Working })
-                        .await;
-                }
-                Some("completed" | "done" | "finish" | "idle") => {
-                    let _ = tx
-                        .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Done })
-                        .await;
-                }
-                Some("error") => {
-                    let _ = tx
-                        .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Error })
-                        .await;
-                }
-                _ => {
-                    if let Some(tool) = body
-                        .get("tool")
-                        .or_else(|| body.get("part"))
-                        .and_then(|t| t.as_str().or_else(|| t.get("tool").and_then(|t| t.as_str())))
-                    {
-                        let _ = tx
-                            .send(AgentEvent::Step {
-                                agent: Agent::Opencode,
-                                tool: tool.to_string(),
-                                detail: body
-                                    .get("title")
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or_default()
-                                    .to_string(),
-                            })
-                            .await;
-                    }
-                }
-            }
-            if !matches!(kind.as_str(), "session.updated" | "message.updated") {
-                log::line(format!("opencode event {kind}"));
+
+        "session.created" => {
+            let _ = tx
+                .send(AgentEvent::SessionStart {
+                    agent: Agent::Opencode,
+                    session_id: body.get("id").and_then(|i| i.as_str()).unwrap_or_default().into(),
+                    project: body
+                        .get("title")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("OpenCode session")
+                        .into(),
+                    cwd: body.get("directory").and_then(|d| d.as_str()).unwrap_or_default().into(),
+                })
+                .await;
+        }
+        "session.idle" => {
+            let _ = tx
+                .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Idle })
+                .await;
+        }
+        "session.error" => {
+            let _ = tx
+                .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Error })
+                .await;
+        }
+        "session.deleted" => {
+            let _ = tx
+                .send(AgentEvent::Finish {
+                    agent: Agent::Opencode,
+                    session_id: body.get("id").and_then(|i| i.as_str()).unwrap_or_default().into(),
+                    message: String::new(),
+                })
+                .await;
+        }
+
+        "tool.execute.before" | "tool.execute.after" => {
+            let tool = body.get("tool").and_then(|t| t.as_str()).unwrap_or("tool");
+            let after = kind.ends_with("after");
+            let detail = body
+                .get("state")
+                .and_then(|s| s.as_str())
+                .map(|s| if after { s.to_string() } else { String::new() })
+                .unwrap_or_default();
+            let _ = tx
+                .send(AgentEvent::Step {
+                    agent: Agent::Opencode,
+                    tool: tool.into(),
+                    detail,
+                })
+                .await;
+            if !after {
+                let _ = tx
+                    .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Working })
+                    .await;
             }
         }
+
+        "message.updated" => {
+            // Turns can end here without a session.idle; keep the pill alive.
+            let _ = tx
+                .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Working })
+                .await;
+        }
+
+        // `permission.asked` / `permission.replied`: upstream's plugin answers
+        // these; we only watch. Counted as activity, shown as a notification,
+        // and never answered from here.
+        "permission.asked" => {
+            let tool = body
+                .get("tool")
+                .or_else(|| body.get("toolName"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("Tool");
+            let _ = tx
+                .send(AgentEvent::Notification {
+                    agent: Agent::Opencode,
+                    kind: "permission".into(),
+                    message: format!("{tool} asks for permission (answer in the OpenCode TUI)"),
+                })
+                .await;
+        }
+        "permission.replied" => {}
+
+        _ => {
+            log::line(format!("opencode event {kind}"));
+        }
     }
+
     emit(app, &AgentEvent::State { agent: Agent::Opencode, state: AgentState::Working });
 }
 
 /// Titles for the pills: `/session` is cheap and documented. Fetched on the
 /// session-poll tick, not per event.
-async fn poll_sessions(app: &tauri::AppHandle, tx: &Sender<AgentEvent>) {
+async fn poll_sessions(tx: &Sender<AgentEvent>) {
     let Ok(resp) = http_get("/session").await else { return };
     if let Ok(sessions) = serde_json::from_slice::<serde_json::Value>(&resp) {
         if let Some(list) = sessions.as_array() {
@@ -243,7 +293,6 @@ async fn poll_sessions(app: &tauri::AppHandle, tx: &Sender<AgentEvent>) {
             }
         }
     }
-    let _ = app;
 }
 
 /// Small helper so the poll paths share one client and base URL.

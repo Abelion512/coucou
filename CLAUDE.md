@@ -19,9 +19,15 @@ The platform target for new features here is Linux. See `docs/LINUX.md`.
 
 ## Build (Linux)
 ```
-cd windows && npm install && cargo build --release -p coucou-hook && npm run tauri build
+cd windows && bun install && cargo build --release -p coucou-hook && bun run tauri build
 ./scripts/verify_coucou_linux.sh          # spec §6 checks, PASS/FAIL/SKIP
 ```
+
+## Staying ahead of upstream
+Watch upstream PRs/issues (`gh pr list --repo Louis-CFM/coucou`). Fixes touching
+`windows/src/` (the front end we never fork) are adopted directly; Linux PRs (#42, #44)
+conflict with our port — our Unix logic wins, cherry-pick only what we lack. Before any
+multi-file change: `./scripts/sync_upstream.sh --check` and read `SYNC-TODO.md`.
 
 ## Upstream sync (IMPORTANT — read before any multi-file change)
 Upstream (`Louis-CFM/coucou`) moves weekly and this fork must keep merging it cheaply.

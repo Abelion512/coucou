@@ -192,6 +192,14 @@ body {
   transition: opacity 0.2s ease-in-out;
 }
 
+/* Keep it light: 0 % CPU when the island is hidden. Folded or hidden, the
+   views are invisible but still in the page, and an animation with no end — a
+   shimmering line, a pulsing dot, a turning ring — would go on being computed
+   for nobody. They all stop, and pick up when the island unfolds (#56). */
+#content.away * {
+  animation-play-state: paused !important;
+}
+
 #header {
   height: 34px;
   flex: 0 0 34px;
@@ -457,7 +465,9 @@ body {
   align-items: center;
   gap: 6px;
   transform-origin: left center;
-  will-change: transform, opacity;
+  /* No will-change here: on WebKitGTK (Linux) the extra compositing layer drew
+     the shimmer's background-clip:text a few pixels off its row, on top of the
+     row above (#43). The rows animate just as smoothly without the hint. */
 }
 
 .ticker-row .tick-icon {
@@ -469,6 +479,9 @@ body {
 }
 
 .ticker-row .tick-text {
+  /* Block, so text-overflow can ellipsize — on an inline span it is ignored and
+     a long step is simply cut off at the card edge (#43). */
+  display: block;
   font: 500 13px var(--font);
   white-space: nowrap;
   overflow: hidden;

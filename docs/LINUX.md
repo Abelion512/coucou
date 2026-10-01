@@ -18,15 +18,16 @@ Dependencies (sekali saja):
 sudo apt install libwebkit2gtk-4.1-dev build-essential libssl-dev libgtk-3-dev \
   libayatana-appindicator3-dev librsvg2-dev pkg-config
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl -fsSL https://bun.sh/install | bash      # bun menggantikan npm di fork ini
 ```
 
 Build:
 
 ```bash
 cd windows          # ya: port Linux hidup di tree windows/ — strukturnya sengaja dipakai ulang
-npm install
+bun install
 cargo build --release -p coucou-hook
-npm run tauri build   # menghasilkan .deb + AppImage
+bun run tauri build   # menghasilkan .deb + AppImage
 ```
 
 ## Verifikasi
@@ -61,8 +62,26 @@ setiap sync berikutnya makin menyakitkan. Merge biasa menjaga konflik kecil dan 
 |---|---|---|
 | `NotchBuddy/`, `docs/*.html`, media | upstream | ambil apa adanya, nol usaha |
 | `windows/**` (logika Win32 + file yang kita porting) | **shared** | satu-satunya zona konflik nyata — resolv manual, biasanya fix upstream perlu dicerminkan ke sisi Unix |
-| `docs/LINUX.md`, `docs/SPEC-linux-mult-agent.md`, `scripts/verify_coucou_linux.sh`, `scripts/sync_upstream.sh` | fork saja | nol konflik |
+| `docs/LINUX.md`, `docs/SPEC-linux-mult-agent.md`, `scripts/*.sh`, `.github/workflows/linux.yml` | fork saja | nol konflik |
 | `README.md`, `CLAUDE.md`, `CHANGELOG.md` | shared (ringan) | edit sesedikit mungkin; konflik di sini sepele |
+
+### Selangkah di depan upstream
+
+Upstream punya issue Linux (#8, #24) dan **dua PR Linux terbuka** (#42, #44) yang
+menyentuh file yang sama dengan port kita (`unix.rs`, `island`, `hooks.rs`,
+`tauri.linux.conf.json`). Fork ini lebih dulu teruji (12 test + e2e + CI), jadi saat
+PR mereka merge:
+
+1. Jalankan `./scripts/sync_upstream.sh --check` — file-file itu akan muncul di zona 🔶.
+2. **Kita yang menang** untuk logika Unix (socket, adapter, XDG paths); ambil dari PR
+   mereka hanya yang belum kita punya (mis. target `.rpm`, ide `clock.rs`).
+3. CI Linux sudah ada di fork ini (`.github/workflows/linux.yml`, bun + cargo test +
+   bundle deb/AppImage di tag `linux-v*`) — upstream belum.
+
+Fix frontend dari PR upstream yang menyentuh `windows/src/` (file yang tidak kita
+ubah) **koadopsi langsung** tanpa menunggu merge — contoh yang sudah diterapkan:
+#43 (ticker overlap, khusus dilaporkan terjadi di WebKitGTK/Linux) dan #56 (pause
+animasi saat island terlipat → 0 % CPU).
 
 ### Kenapa macOS & Windows tidak dihapus
 

@@ -1,0 +1,70 @@
+name: Linux
+
+# Builds and tests the Linux app from the same Tauri sources as the Windows
+# app. Publishes the .deb and AppImage on `linux-v*` tags; pushed from the
+# upstream Linux PRs (#42, #44) so this fork stays a step ahead of them.
+
+on:
+  push:
+    tags:
+      - 'linux-v*'
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            windows/target
+          key: linux-cargo-${{ hashFiles('windows/Cargo.lock') }}
+          restore-keys: linux-cargo-
+
+      - name: Frontend build (bun)
+        run: bun install --frozen-lockfile && bun run build
+
+      - name: Rust tests
+        run: |
+          cargo test -p coucou-hook
+          cargo test -p coucou --lib
+
+      - name: Build bundles (.deb + AppImage)
+        if: startsWith(github.ref, 'refs/tags/linux-v')
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+        run: |
+          cargo build --release -p coucou-hook
+          bunx tauri build
+          echo "version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')" >> $GITHUB_OUTPUT
+        id: pack
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/linux-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            windows/target/release/bundle/deb/*.deb
+            windows/target/release/bundle/appimage/*.AppImage

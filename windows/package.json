@@ -4,14 +4,14 @@
   "version": "0.1.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "bunx --bun vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "icons": "node scripts/gen-icons.mjs",
+    "icons": "bun scripts/gen-icons.mjs",
     "tauri": "tauri",
     "predev": "cargo build --release -p coucou-hook",
     "prebuild": "cargo build --release -p coucou-hook",
-    "pack": "tauri build && node scripts/pack.mjs"
+    "pack": "tauri build && bun scripts/pack.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
