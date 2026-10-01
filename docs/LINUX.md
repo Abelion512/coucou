@@ -4,9 +4,9 @@ Fork ini adalah port **native Linux (Rust/Tauri)** dari [Louis-CFM/coucou](https
 Mochi di atas layar, monitoring Claude-Code, approve/deny permission, plus **3 adapter agent baru**
 (OpenCode, Hermes, Freebuff/Codebuff). Spesifikasi lengkap: [`docs/SPEC-linux-mult-agent.md`](SPEC-linux-mult-agent.md).
 
-> Platform target: **Linux Mint 22.3 (X11 + Wayland)**. Kode macOS (`NotchBuddy/`) dan
-> Windows (`windows/` bagian Win32) dibiarkan utuh — mereka "penumpang" yang tidak
-> dikompilasi di Linux, dan justru membuat merge upstream nyaris bebas konflik.
+> Platform target: **Linux Mint 22.3 (X11 + Wayland)**. Fork ini **Linux-only**: sumber
+> macOS (`NotchBuddy/`) dan Windows (bagian Win32 + dir `windows/`) sudah dihapus;
+> `windows/` di-rename menjadi `app/`. Konsekuensi sync-nya ada di bawah.
 
 ---
 
@@ -24,7 +24,7 @@ curl -fsSL https://bun.sh/install | bash      # bun menggantikan npm di fork ini
 Build:
 
 ```bash
-cd windows          # ya: port Linux hidup di tree windows/ — strukturnya sengaja dipakai ulang
+cd app
 bun install
 cargo build --release -p coucou-hook
 bun run tauri build   # menghasilkan .deb + AppImage
@@ -61,7 +61,9 @@ setiap sync berikutnya makin menyakitkan. Merge biasa menjaga konflik kecil dan 
 | Area | Pemilik | Artinya saat merge |
 |---|---|---|
 | `NotchBuddy/`, `docs/*.html`, media | upstream | ambil apa adanya, nol usaha |
-| `windows/**` (logika Win32 + file yang kita porting) | **shared** | satu-satunya zona konflik nyata — resolv manual, biasanya fix upstream perlu dicerminkan ke sisi Unix |
+| `app/src/**` (front end, tidak pernah di-fork) | upstream | fix upstream diadopsi langsung |
+| `app/src-tauri/**`, `app/hook/**` (port Linux kita) | **fork** | jika upstream punya PR Linux (#42/#44): implementasi kita menang, cerminkan intent fix mereka saja |
+| `NotchBuddy/`, `windows/` (dihapus di fork) | upstream | deleted-by-us: terima penghapusan; kalaupun upstream menambah file baru di sana, tidak relevan untuk Linux |
 | `docs/LINUX.md`, `docs/SPEC-linux-mult-agent.md`, `scripts/*.sh`, `.github/workflows/linux.yml` | fork saja | nol konflik |
 | `README.md`, `CLAUDE.md`, `CHANGELOG.md` | shared (ringan) | edit sesedikit mungkin; konflik di sini sepele |
 
@@ -78,23 +80,25 @@ PR mereka merge:
 3. CI Linux sudah ada di fork ini (`.github/workflows/linux.yml`, bun + cargo test +
    bundle deb/AppImage di tag `linux-v*`) — upstream belum.
 
-Fix frontend dari PR upstream yang menyentuh `windows/src/` (file yang tidak kita
+Fix frontend dari PR upstream yang menyentuh front end (file yang tidak kita
 ubah) **koadopsi langsung** tanpa menunggu merge — contoh yang sudah diterapkan:
 #43 (ticker overlap, khusus dilaporkan terjadi di WebKitGTK/Linux) dan #56 (pause
 animasi saat island terlipat → 0 % CPU).
 
-### Kenapa macOS & Windows tidak dihapus
+### Konsekuensi menghapus macOS & Windows
 
-Menghapus `NotchBuddy/` / `windows/` memang "bersih", tapi setiap commit upstream yang
-menyentuh dir itu lalu menjadi konflik *deleted-by-us vs modified-by-them* — selamanya.
-Kode itu tidak dikompilasi di Linux dan tidak menambah biaya apa pun. Ponytail rung 1:
-*(does this need to exist? no → skip)*. Kalau suatu hari benar-benar mau:
-`git rm -r NotchBuddy && git commit -m "drop macOS"` — tapi kamu sudah diperingatkan. 🙂
+Karena `NotchBuddy/` dan `windows/` sudah dihapus, commit upstream yang menyentuh
+kedua dir itu muncul sebagai *deleted-by-us vs modified-by-them*. Aturannya satu
+kalimat: **terima penghapusan upstream (`git rm -r` + `git add`), jangan resurrect** —
+kecuali file itu jelas dibutuhkan Linux (contoh nyata yang pernah diambil: fix keamanan
+di `HookServer.swift` dicerminkan ke `app/src-tauri/src/socket.rs`). Fix di front end
+(`src/**` → sekarang `app/src/**`) dan logika Rust yang kita miliki tetap mengikuti
+checklist 🔶 seperti biasa.
 
 ## Arsitektur singkat
 
-- `windows/src-tauri/src/socket.rs` — relay hook via Unix socket (`$XDG_RUNTIME_DIR/coucou/coucou.sock`,
+- `app/src-tauri/src/socket.rs` — relay hook via Unix socket (`$XDG_RUNTIME_DIR/coucou/coucou.sock`,
   guard 107-byte + fallback `/tmp/coucou-<uid>.sock`), `SO_PEERCRED`, ceiling 32 koneksi, timeout 5 s.
-- `windows/src-tauri/src/agents/` — AgentBus + adapter OpenCode (SSE), Hermes (`gateway.sock`),
+- `app/src-tauri/src/agents/` — AgentBus + adapter OpenCode (SSE), Hermes (`gateway.sock`),
   Freebuff/Codebuff (file-watch `~/.config/manicode/`). Observe-only; hanya Claude-Code punya `PermissionReq`.
-- `windows/hook/src/unix.rs` — relay `coucou-hook`: ENOENT → exit 0 instan (Claude Code tak pernah diblokir).
+- `app/hook/src/unix.rs` — relay `coucou-hook`: ENOENT → exit 0 instan (Claude Code tak pernah diblokir).

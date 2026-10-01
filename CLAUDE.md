@@ -1,33 +1,44 @@
 # Coucou — guide for AI coding agents
 
-Coucou is a small animated character — Mochi — that lives in the MacBook notch (macOS) or at
-the top of the screen (Windows, **Linux**). It shows Claude Code sessions and a few
-integrations, and lets the user approve, answer, chat and drop files from the island.
+Coucou is a small animated character — Mochi — that lives at the top of the screen on
+**Linux** (this fork's only platform). It shows Claude Code sessions plus OpenCode,
+Hermes and Freebuff/Codebuff, and lets the user approve, answer, chat and drop files
+from the island.
 
-**This fork is maintained Linux-first** (Linux Mint 22.3, Rust/Tauri port + 3 agent adapters).
-The platform target for new features here is Linux. See `docs/LINUX.md`.
+**This fork is Linux-only** (Linux Mint 22.3, Rust/Tauri + bun, X11 + Wayland).
+Upstream's macOS/Windows sources were removed in favour of a clean single-platform
+tree — see the sync rules below for how that trade-off is managed.
 
 ## Where things are
-- **Linux (the fork's own work)**: `windows/src-tauri/src/socket.rs` (Unix-socket hook relay),
-  `windows/src-tauri/src/agents/` (AgentBus + OpenCode/Hermes/Freebuff adapters),
-  `windows/src-tauri/src/island/unix.rs`, `windows/hook/src/unix.rs`.
-- `windows/` — the Tauri app shared by Windows and Linux; `NotchBuddy/Sources/App/` — all macOS Swift code.
-- `docs/SPEC.md`, `docs/INTEGRATIONS.md` — behaviour, views, states, integrations (in French).
-  `docs/LINUX.md`, `docs/SPEC-linux-mult-agent.md` — the Linux fork's docs.
-- `design/prototype/notch-buddy.html` — original prototype, the visual source of truth. `design/captures/` — target screenshots.
-- `docs/*.html` — the GitHub Pages site (privacy, terms, support, legal notice).
+- `app/src-tauri/src/` — Rust backend: `socket.rs` (Unix-socket hook relay),
+  `agents/` (AgentBus + OpenCode/Hermes/Freebuff adapters), `island/` (window +
+  cursor/click-through, GTK), `hooks.rs` (settings.json installer), `secrets.rs`.
+- `app/hook/` — `coucou-hook`, the Claude Code relay (Unix socket, SO_PEERCRED).
+- `app/src/` — island front end (TypeScript, no framework; Canvas 2D Mochi).
+- `shared/sounds/` — the 28 WAVs, shared repo assets (path declared once in `app/vite.config.ts`).
+- `docs/SPEC-linux-mult-agent.md` — the port + adapters spec. `docs/LINUX.md` — build, verify, sync.
+- `docs/SPEC.md`, `docs/INTEGRATIONS.md` — upstream behaviour spec (French, still useful for views/states).
+- `design/prototype/notch-buddy.html` — original prototype, the visual source of truth.
 
 ## Build (Linux)
 ```
-cd windows && bun install && cargo build --release -p coucou-hook && bun run tauri build
+cd app && bun install && cargo build --release -p coucou-hook && bun run tauri build
 ./scripts/verify_coucou_linux.sh          # spec §6 checks, PASS/FAIL/SKIP
 ```
 
+## Upstream sync (IMPORTANT — read before any multi-file change)
+Upstream (`Louis-CFM/coucou`) moves weekly. Because this fork dropped the macOS/Windows
+trees, upstream edits there resolve as deleted-by-us — take upstream's side (delete)
+unless the file is something Linux needs; the real review happens for upstream fixes to
+`app/src/**` (adopt directly) and any new Linux work in `windows/` (now `app/`), where
+our implementation wins and only their intent is mirrored.
+- **Before starting an edit session**: `./scripts/sync_upstream.sh --check`, read `SYNC-TODO.md`.
+- Merge, never rebase. `--merge` auto-stashes uncommitted tracked WIP and pops after.
+
 ## Staying ahead of upstream
-Watch upstream PRs/issues (`gh pr list --repo Louis-CFM/coucou`). Fixes touching
-`windows/src/` (the front end we never fork) are adopted directly; Linux PRs (#42, #44)
-conflict with our port — our Unix logic wins, cherry-pick only what we lack. Before any
-multi-file change: `./scripts/sync_upstream.sh --check` and read `SYNC-TODO.md`.
+Watch upstream PRs/issues (`gh pr list --repo Louis-CFM/coucou`). Fixes touching the
+shared front end are adopted directly; Linux PRs conflict with our port — our Unix
+logic wins, cherry-pick only what we lack.
 
 ## Upstream sync (IMPORTANT — read before any multi-file change)
 Upstream (`Louis-CFM/coucou`) moves weekly and this fork must keep merging it cheaply.
@@ -41,7 +52,7 @@ Upstream (`Louis-CFM/coucou`) moves weekly and this fork must keep merging it ch
 
 ## Rules
 - Before writing code, take the lazy-senior ladder (ponytail): does it need to exist? reuse what the codebase has, then stdlib, then platform, then an installed dependency, then one line, then the minimum that works. Never cut validation, error handling, security or accessibility to get there.
-- Linux is the target platform: Rust + Tauri for the app; keep macOS (`SwiftUI + AppKit`, Canvas/TimelineView) and Windows code paths compiling untouched when the file is shared.
+- Linux is the only platform: Rust + Tauri + bun. There is no macOS or Windows code left in the tree; do not reintroduce cfg(windows) branches.
 - Secrets live in the Keychain / Credential Manager / Secret Service, never on disk or in git. The Freebuff adapter's `tokenKey` is parsed and immediately dropped; it never reaches logs, state or UI.
 - No telemetry. Network calls only to services the user configured; every agent adapter is loopback-only.
 - Never block Claude Code: if the app doesn't answer, the hook exits immediately (300 ms connect, 2 s fire-and-forget, 110 s decision budget).

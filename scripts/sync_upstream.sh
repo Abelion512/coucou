@@ -131,7 +131,7 @@ EOF
         echo "- [ ] baca daftar commit di atas; tandai fix macOS yang layak di-porting ke sisi Unix"
         echo "- [ ] jalankan \`./scripts/sync_upstream.sh --merge\`"
         echo "- [ ] selesaikan semua item 🔶 di atas (kalau ada)"
-        echo "- [ ] \`cargo test -p coucou --lib && cargo test -p coucou-hook\` (di windows/)"
+        echo "- [ ] \`cargo test -p coucou --lib && cargo test -p coucou-hook\` (di app/)"
         echo "- [ ] \`./scripts/verify_coucou_linux.sh --no-build\`"
         echo "- [ ] commit merge, hapus file ini"
     } >> "$TODO_FILE"
@@ -169,8 +169,8 @@ merge)
         echo ""
         echo "✅ merge bersih. Unit tests:"
         if command -v cargo >/dev/null 2>&1 || [ -x "$HOME/.cargo/bin/cargo" ]; then
-            (cd windows && cargo test -p coucou-hook --quiet >/dev/null 2>&1 \
-                && echo "  ✅ coucou-hook tests" || echo "  ❌ coucou-hook tests — jalankan manual: (cd windows && cargo test -p coucou-hook)")
+            (cd app && cargo test -p coucou-hook --quiet >/dev/null 2>&1 \
+                && echo "  ✅ coucou-hook tests" || echo "  ❌ coucou-hook tests — jalankan manual: (cd app && cargo test -p coucou-hook)")
         else
             echo "  (cargo tidak ditemukan — jalankan test manual)"
         fi
@@ -199,7 +199,7 @@ Cara selesai:
      — lihat: git diff $BASE..$UPSTREAM/$UPSTREAM_BRANCH -- <file>
   2. git add <file-yang-sudah>
   3. git commit --no-edit        (menyelesaikan merge; JANGAN reset/abort kecuali bermaksud)
-  4. cargo test di windows/, lalu ./scripts/verify_coucou_linux.sh --no-build
+  4. cargo test di app/, lalu ./scripts/verify_coucou_linux.sh --no-build
   5. stash dipulihkan otomatis hanya saat merge bersih; setelah konflik selesai:
      git stash pop
 HINT

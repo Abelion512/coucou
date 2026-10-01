@@ -15,8 +15,8 @@
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOOK_BIN="$REPO/windows/target/release/coucou-hook"
-APP_LIB_DIR="$REPO/windows/target/release"
+HOOK_BIN="$REPO/app/target/release/coucou-hook"
+APP_LIB_DIR="$REPO/app/target/release"
 PASS=0; FAIL=0; SKIP=0
 
 CARGO=""
@@ -79,7 +79,7 @@ elif [ -z "$CARGO" ]; then
         fail "no cargo and no prebuilt hook binary — install rustup, then rerun"
     fi
 else
-    if (cd "$REPO/windows" && "$CARGO" build --release -p coucou-hook >/dev/null 2>&1); then
+    if (cd "$REPO/app" && "$CARGO" build --release -p coucou-hook >/dev/null 2>&1); then
         pass "cargo build --release -p coucou-hook"
     else
         fail "cargo build --release -p coucou-hook"
@@ -278,7 +278,7 @@ say ""
 
 # ── 8. Hook install guardrails (static) ───────────────────────────────────────
 say "8 · Hook install guardrails"
-HOOKS_SRC="$REPO/windows/src-tauri/src/hooks.rs"
+HOOKS_SRC="$REPO/app/src-tauri/src/hooks.rs"
 if [ -f "$HOOKS_SRC" ]; then
     OK=1
     grep -q "settings.json.bak" "$HOOKS_SRC" || OK=0
@@ -299,12 +299,12 @@ say ""
 # ── 9. Unit tests ─────────────────────────────────────────────────────────────
 say "9 · Unit tests"
 if [ -n "$CARGO" ] && [ "${1:-}" != "--no-build" ]; then
-    if (cd "$REPO/windows" && "$CARGO" test -p coucou-hook >/dev/null 2>&1); then
+    if (cd "$REPO/app" && "$CARGO" test -p coucou-hook >/dev/null 2>&1); then
         pass "coucou-hook tests"
     else
         fail "coucou-hook tests"
     fi
-    if (cd "$REPO/windows" && "$CARGO" test -p coucou --lib >/dev/null 2>&1); then
+    if (cd "$REPO/app" && "$CARGO" test -p coucou --lib >/dev/null 2>&1); then
         pass "coucou app tests"
     else
         fail "coucou app tests"
@@ -318,7 +318,7 @@ say ""
 say "10 · Display session (manual step)"
 case "${XDG_SESSION_TYPE:-unknown}" in
     x11)     say "  (info) X11 session — the island and cursor poll should be fully live."; pass "X11 session detected" ;;
-    wayland) say "  (info) Wayland — global cursor is unavailable by design; the tray is the way in. Launch the app and confirm it does not crash:"; say "         XDG_SESSION_TYPE=wayland windows/target/release/coucou" ; skip "Wayland needs a manual GUI launch" ;;
+    wayland) say "  (info) Wayland — global cursor is unavailable by design; the tray is the way in. Launch the app and confirm it does not crash:"; say "         XDG_SESSION_TYPE=wayland app/target/release/coucou" ; skip "Wayland needs a manual GUI launch" ;;
     *)       skip "unknown session type — run the app and try the tray" ;;
 esac
 say ""

@@ -1,20 +1,19 @@
 <div align="center">
 
-<img src="NotchBuddy/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="96" alt="Coucou icon">
+<img src="app/src-tauri/icons/128x128.png" width="96" alt="Coucou icon">
 
-# Coucou
+# Coucou for Linux
 
-**A tiny friend that lives in your Mac's notch — at the top of your screen on Windows and Linux — and keeps an eye on your Claude Code sessions.**
+**A tiny friend that lives at the top of your Linux screen and keeps an eye on your Claude Code sessions — plus OpenCode, Hermes and Freebuff/Codebuff.**
 
 Approve permissions, watch your agents work, drop a file, chat with Claude — all without leaving what you're doing.
 
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)
-![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)
-![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
-![SwiftUI](https://img.shields.io/badge/SwiftUI-native-0A84FF)
+![Linux Mint 22+](https://img.shields.io/badge/Linux%20Mint-22%2B-87CF3E?logo=linuxmint&logoColor=white)
+![X11 / Wayland](https://img.shields.io/badge/X11%20·%20Wayland-both-blue)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
+![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust&logoColor=white)
+![Bun](https://img.shields.io/badge/bun-frontend-f472b6?logo=bun&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![GitHub stars](https://img.shields.io/github/stars/Louis-CFM/coucou?style=social)
 
 <img src="docs/media/demo.gif" width="760" alt="Coucou in action">
 
@@ -25,23 +24,22 @@ Approve permissions, watch your agents work, drop a file, chat with Claude — a
 ## Why
 
 Some studios showed off gorgeous notch companions… and never let anyone use them.
+This fork brings the idea to Linux.
 **Coucou is the open version.** Every line of code, every animation, every sound — free to use, read, fork and remix.
 
-Meet **Mochi**: a soft little squircle with big eyes that pops out of your notch, waves hello, follows your cursor with its eyes, gets annoyed when you poke it (and dizzy if you insist), and tells you the moment Claude Code needs you.
+Meet **Mochi**: a soft little squircle with big eyes that pops out of the top edge of your screen, waves hello, follows your cursor with its eyes, gets annoyed when you poke it (and dizzy if you insist), and tells you the moment Claude Code needs you.
 
 ## Features
 
-- 🤖 **Claude Code, live** — see every session in your notch: what it reads, edits and runs, step by step. Finished? Mochi does a happy little jump.
-- ✅ **Approve from the notch** — Claude Code permission requests show up with **Allow / Deny**. One click, back to work.
-- 🧑‍💻 **Jump to the right terminal** — open the exact terminal window of a session *(macOS)*.
-- 💬 **Ask Claude anything** — built-in chat, straight from the notch.
-- 📎 **Drop a file on the notch** — Mochi turns into a box and swallows it, then ask a question about it or send it by email *(email: macOS, Mail.app)*.
-- 🪟 **Drag Mochi onto any window** — attach that window as context for Claude *(macOS)*.
+- 🤖 **Claude Code, live** — see every session at the top of your screen: what it reads, edits and runs, step by step. Finished? Mochi does a happy little jump.
+- ✅ **Approve from the island** — Claude Code permission requests show up with **Allow / Deny**. One click, back to work.
+- 💬 **Ask Claude anything** — built-in chat, straight from the island.
+- 📎 **Drop a file on the island** — Mochi turns into a box and swallows it, then you can ask a question about it.
 - 🔌 **Integrations** — Stripe payments, n8n workflows, GitHub, Vercel deployments, Resend emails, Notion, Cal.com. Each one gets its own little colored Mochi.
-- 🎭 **A real character** — idle breathing, blinks, eyes on a sphere that follow your mouse, emotes, 28 handcrafted sounds, a greeting on launch.
-- 🫥 **Invisible when idle** — hides away when nothing is running, peeks out when you hover the notch (the top edge of the screen on Windows).
-- 🖥️ **Any Mac, notch or not** — on an iMac, a Mac mini, or a MacBook with its lid closed on an external display, Mochi sits in a small bar at the top of the screen.
-- 🔒 **Private by design** — no telemetry, no account. Keys live in your macOS Keychain or Windows Credential Manager. The app only talks to the services you plug in.
+- 🎭 **A real character** — idle breathing, blinks, eyes that follow your mouse, emotes, 28 handcrafted sounds, a greeting on launch.
+- 🫥 **Invisible when idle** — hides away when nothing is running, peeks out when you hover the top edge of the screen.
+- 🤖 **Multi-agent** — watches OpenCode, Hermes and Freebuff/Codebuff alongside Claude Code, each in its own pill.
+- 🔒 **Private by design** — no telemetry, no account. Keys live in the Linux Secret Service (GNOME Keyring / KWallet). The app only talks to the services you plug in.
 
 <table>
 <tr>
@@ -56,53 +54,33 @@ Meet **Mochi**: a soft little squircle with big eyes that pops out of your notch
 
 ## Install
 
-### Download for macOS
+### Linux (this fork's platform)
 
-1. Grab the latest `Coucou.zip` from [Releases](https://github.com/Louis-CFM/coucou/releases).
-2. Unzip and move **Coucou.app** to `/Applications`.
-3. Launch. This build isn't notarized by Apple yet, so the first time macOS says it can't verify the developer: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** (only once).
+This fork is **Linux-only**: the Tauri app lives in `app/`, builds with bun + Rust,
+and ships as a `.deb` and an AppImage. Install, build and verification are in
+[`docs/LINUX.md`](docs/LINUX.md).
 
-### Windows
+### Build from source (Linux)
 
-The Windows installer is **temporarily unavailable**. Microsoft Defender wrongly
-flags the unsigned installer as malware; a false-positive report is under review
-at Microsoft and the installer will come back once it is cleared and signed.
-Until then you can [build it from source](#build-from-source).
-
-There is no notch on a PC, so the island slides out of the top edge of the screen
-instead of hiding inside one. See [`windows/README.md`](windows/README.md) for the
-rest of the differences.
-
-### Build from source
-
-**macOS** — requirements: macOS 15+, Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requirements: [Rust](https://rustup.rs), [bun](https://bun.sh), WebKitGTK 4.1 and GTK 3 dev packages.
 
 ```bash
-brew install xcodegen
-git clone https://github.com/Louis-CFM/coucou.git
-cd coucou/NotchBuddy
-xcodegen
-open NotchBuddy.xcodeproj   # then ⌘R
-```
-
-**Windows** — requirements: [Rust](https://rustup.rs), Node 20+, MSVC build tools.
-
-```powershell
-git clone https://github.com/Louis-CFM/coucou.git
-cd coucou/windows
-npm install
-npm run pack                # installer lands in windows/release/
+git clone https://github.com/Abelion512/coucou.git
+cd coucou/app
+bun install
+cargo build --release -p coucou-hook
+bun run tauri build        # .deb + AppImage land in app/target/release/bundle/
 ```
 
 ## Setup
 
-Click the Coucou icon in the menu bar (macOS) or in the system tray (Windows) → **Settings…**
+Click the Coucou icon in the system tray → **Settings…**
 
 | What | Why | Where the key goes |
 |---|---|---|
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
-| **Anthropic API key** | chat and questions about files | Keychain / Windows Credential Manager |
-| Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Keychain / Windows Credential Manager, all optional |
+| **Anthropic API key** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet) |
+| Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Secret Service, all optional |
 
 If Coucou isn't running, the hook exits immediately: **Claude Code is never blocked.**
 
@@ -110,31 +88,23 @@ If Coucou isn't running, the hook exits immediately: **Claude Code is never bloc
 
 | Do this | Mochi does that |
 |---|---|
-| Hover the notch (top edge on Windows) | peeks out and says hi 👋 |
+| Hover the top edge of the screen | peeks out and says hi 👋 |
 | Click it | opens |
 | Hover Mochi | blinks, eyes grow |
 | Click Mochi | squish + annoyed |
 | Click 3 times fast | 😵‍💫 dizzy for a few seconds |
 | Drag a file onto the island | turns into a box and swallows it |
-| Drag Mochi onto a window *(macOS)* | attaches it as context |
 
 ## How it works
 
-**macOS**
-
-- **Island**: a borderless `NSPanel` hugging the notch, driven by a small state machine (`hidden → petit → home`).
-- **Character**: drawn in SwiftUI `Canvas` + `TimelineView` at 60 fps — squircle body, eyes projected on a sphere, spring animations. No Rive, no Lottie, no images.
-- **Claude Code**: a tiny `nb-hook` script receives hook events and forwards them over a Unix socket to the app. For approvals it waits for your click, then answers the hook.
-- **Integrations**: lightweight pollers, paused when nothing is watching.
-- **Sounds**: 28 short WAVs played through preloaded `AVAudioPlayer`s.
-
-The macOS app is native Swift 6 / SwiftUI / AppKit with **zero third-party dependencies**.
-
-**Windows**
-
-- A [Tauri 2](https://tauri.app) app (Rust + TypeScript): the island is a transparent, always-on-top window that never steals focus, Mochi is drawn in Canvas 2D with the same shapes, timings and sounds as on the Mac.
-- Claude Code hooks go through a tiny `coucou-hook.exe` and a named pipe; keys live in Windows Credential Manager.
-- Details and differences in [`windows/README.md`](windows/README.md).
+- A [Tauri 2](https://tauri.app) app (Rust + TypeScript): the island is a transparent, always-on-top window that never steals focus; Mochi is drawn in Canvas 2D.
+- Claude Code hooks go through a tiny `coucou-hook` relay and a per-user Unix socket
+  (`$XDG_RUNTIME_DIR/coucou/coucou.sock`, `SO_PEERCRED`-checked). If the app doesn't answer
+  within 300 ms the relay exits: **Claude Code is never blocked.**
+- The other agents are watched by three observe-only adapters: OpenCode (SSE), Hermes
+  (gateway control socket), Freebuff/Codebuff (manicode file watching).
+- Integrations are lightweight pollers, paused when nothing is watching.
+- Sounds: 28 short WAVs served from `shared/sounds/`.
 
 ## Contributing
 
@@ -143,6 +113,7 @@ Issues and PRs are very welcome — new integrations, new emotes, new sounds, bu
 ## Credits
 
 Built by [Louis Raillé](https://louisraille.fr) with Claude Code.
+Built by [Louis Raillé](https://louisraille.fr) with Claude Code; Linux port and multi-agent fork maintained here.
 Inspired by the notch-companion concepts shared by design studios — this project is independent and not affiliated with any of them.
 
 ## License
@@ -150,20 +121,14 @@ Inspired by the notch-companion concepts shared by design studios — this proje
 - **Code:** [MIT](LICENSE) — use it, fork it, learn from it, just keep the copyright notice.
 - **Name, Mochi character, icon, sounds and media:** © Louis Raillé, all rights reserved — see [LICENSE-ASSETS.md](LICENSE-ASSETS.md). Shipping your own fork? Give it your own name and character.
 
-## Linux (this fork)
+## Upstream sync
 
-This fork is maintained **Linux-first** (native Rust/Tauri port, Linux Mint 22.3, X11 + Wayland)
-and adds three agent adapters on top of Claude Code: **OpenCode**, **Hermes** and
-**Freebuff/Codebuff** — all observe-only, all loopback, and Claude Code approval stays untouched.
+This fork tracks [Louis-CFM/coucou](https://github.com/Louis-CFM/coucou) weekly:
 
-- Linux install, build and verification: [`docs/LINUX.md`](docs/LINUX.md)
-- Multi-agent port spec (audited 2026-10-01): [`docs/SPEC-linux-mult-agent.md`](docs/SPEC-linux-mult-agent.md)
-- Keeping in sync with upstream, with near-zero conflicts: [`docs/LINUX.md § Sinkronisasi upstream`](docs/LINUX.md)
-  — in short: `./scripts/sync_upstream.sh --check` writes a `SYNC-TODO.md` you (or your AI agent)
-  read before editing, then `--merge` merges `Louis-CFM/coucou` with auto-stash when needed.
-
-The macOS and Windows sources stay in the tree untouched — they are passengers on Linux, and
-leaving them intact is what keeps upstream merges nearly conflict-free.
+- `./scripts/sync_upstream.sh --check` writes a `SYNC-TODO.md` you (or your AI agent)
+  read before editing — it lists the files where fork and upstream changes overlap.
+- `--merge` merges `upstream/main` with auto-stash when needed. Merge, never rebase.
+- The playbook for staying a step ahead is in [`docs/LINUX.md`](docs/LINUX.md).
 
 <div align="center">
 

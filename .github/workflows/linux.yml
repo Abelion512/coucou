@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: windows
+        working-directory: app
 
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +39,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            windows/target
-          key: linux-cargo-${{ hashFiles('windows/Cargo.lock') }}
+            app/target
+          key: linux-cargo-${{ hashFiles('app/Cargo.lock') }}
           restore-keys: linux-cargo-
 
       - name: Frontend build (bun)
@@ -66,5 +66,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            windows/target/release/bundle/deb/*.deb
-            windows/target/release/bundle/appimage/*.AppImage
+            app/target/release/bundle/deb/*.deb
+            app/target/release/bundle/appimage/*.AppImage
