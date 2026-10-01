@@ -44,20 +44,23 @@ logic wins, cherry-pick only what we lack.
 Upstream (`Louis-CFM/coucou`) moves weekly and this fork must keep merging it cheaply.
 **Before starting an edit session, run `./scripts/sync_upstream.sh --check` and read
 `SYNC-TODO.md`** — it lists the files where fork and upstream changes overlap and any WIP.
-- Merge, never rebase. Conflicts live almost only in `windows/**`; there, keep the Linux
-  side but mirror upstream fixes (read their commit for the intent).
-- Do not delete `NotchBuddy/` or the Win32 parts of `windows/`: they don't compile on Linux
-  and deleting them turns every upstream touch into a deleted-vs-modified conflict, forever.
+- Merge, never rebase. Conflicts land on the files both sides still have — `README.md`,
+  `CHANGELOG.md`, `app/src/**`, `docs/**`. There, read the upstream commit for the
+  intent, then keep the Linux side where the two disagree.
+- Upstream's `NotchBuddy/` and `windows/` are deleted here on purpose: take the
+  deletion when they collide, unless a change is something Linux needs (then mirror
+  its intent into `app/`, like the macOS socket hardening that became part of
+  `socket.rs`).
 - `git stash` is only for uncommitted WIP; `sync_upstream.sh --merge` auto-stashes and pops.
 
 ## Rules
 - Before writing code, take the lazy-senior ladder (ponytail): does it need to exist? reuse what the codebase has, then stdlib, then platform, then an installed dependency, then one line, then the minimum that works. Never cut validation, error handling, security or accessibility to get there.
 - Linux is the only platform: Rust + Tauri + bun. There is no macOS or Windows code left in the tree; do not reintroduce cfg(windows) branches.
-- Secrets live in the Keychain / Credential Manager / Secret Service, never on disk or in git. The Freebuff adapter's `tokenKey` is parsed and immediately dropped; it never reaches logs, state or UI.
+- Secrets live in the Secret Service keyring, never on disk or in git. The Freebuff adapter's `tokenKey` is parsed and immediately dropped; it never reaches logs, state or UI.
 - No telemetry. Network calls only to services the user configured; every agent adapter is loopback-only.
 - Never block Claude Code: if the app doesn't answer, the hook exits immediately (300 ms connect, 2 s fire-and-forget, 110 s decision budget).
 - Never overwrite `~/.claude/settings.json`: dated backup, merge, show the diff, write only after the user confirms.
 - Never send an email or approve a Claude Code permission without an explicit click. Only Claude-Code events may carry `PermissionReq`; the other adapters are observe-only.
 - Performance: 0 % CPU when the island is hidden.
-- Keep the bundle identifiers (`fr.louisraille.NotchBuddy` on macOS, `fr.louisraille.coucou` on Windows/Linux).
+- Keep the bundle identifier `fr.louisraille.coucou`.
 - Visual changes must match the prototype and the screenshots in `design/captures/`.

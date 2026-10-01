@@ -58,7 +58,7 @@ const task = (
 
 /** AgentTask.integrationAgents — same ids, names and colours as macOS. */
 export const INTEGRATION_AGENTS: AgentTask[] = [
-  task("integration_claude", "Claude Code", "#F5F6F8", "claudeCode"),
+  task("integration_claude", "Claude Code", "#D97757", "claudeCode"),
   task("integration_resend", "Resend", "#22C55E", "n8n"),
   task("integration_n8n", "n8n", "#F29B38", "n8n"),
   task("integration_vercel", "Vercel", "#7C5CFF", "n8n"),
@@ -66,11 +66,6 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_notion", "Notion", "#8C8C8C", "n8n"),
   task("integration_calcom", "Cal.com", "#C9956A", "n8n"),
   task("integration_stripe", "Stripe", "#0570DE", "n8n"),
-];
-
-export const TOGGLEABLE_INTEGRATION_IDS = [
-  "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-  "integration_notion", "integration_calcom", "integration_stripe",
 ];
 
 /** What an integration poller last reported. */
@@ -101,8 +96,9 @@ export const DEFAULT_SETTINGS: Settings = {
   soundVolume: 0.12,
   autoCloseInterval: 15,
   absenceInterval: 180,
+  // Resend is off by default: it needs its own key and nobody asked for it.
   activeIntegrations: [
-    "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
+    "integration_notion", "integration_n8n", "integration_vercel", "integration_github",
   ],
   screen: "primary",
   autostart: false,
@@ -214,18 +210,20 @@ class AppState {
     // Order: integration_claude first, then agent_* pills (visible in slice(0,4)),
     // then other integrations in declaration order.
     const order = INTEGRATION_AGENTS.map((t) => t.id);
+    const rank = (id: string) => {
+      if (id === "integration_claude") return 0;
+      if (id.startsWith("agent_")) return 1;
+      const idx = order.indexOf(id);
+      // Unknown ids last, but keep their relative order: a stable sort leaves
+      // equal ranks alone.
+      return idx < 0 ? 3 : 2;
+    };
     this.tasks.sort((a, b) => {
-      const isAgentA = a.id.startsWith("agent_");
-      const isAgentB = b.id.startsWith("agent_");
-      // integration_claude always first
-      if (a.id === "integration_claude") return -1;
-      if (b.id === "integration_claude") return 1;
-      // agent_* before other integrations; preserve insertion order among themselves
-      if (isAgentA && !isAgentB) return -1;
-      if (isAgentB && !isAgentA) return 1;
-      if (isAgentA && isAgentB) return 0;
-      // both known integrations → declaration order
-      return order.indexOf(a.id) - order.indexOf(b.id);
+      const ra = rank(a.id);
+      const rb = rank(b.id);
+      if (ra !== rb) return ra - rb;
+      // Same rank, both known integrations → declaration order.
+      return ra === 2 ? order.indexOf(a.id) - order.indexOf(b.id) : 0;
     });
     if (!this.focusId) this.focusId = "integration_claude";
     this.notify();

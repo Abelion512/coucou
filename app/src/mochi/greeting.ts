@@ -29,8 +29,6 @@ const T = {
   COLLAPSE: 0.34,
 };
 
-export const GREETING_END = T.end;
-
 // ── Geometry (640×150) ────────────────────────────────────────────────────────
 
 const C0 = { x: 320, y: 90 };

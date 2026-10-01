@@ -327,7 +327,7 @@ pub fn ensure_hook_exe(app: &AppHandle) {
         return;
     }
 
-    let hook_name = if cfg!(windows) { "coucou-hook.exe" } else { "coucou-hook" };
+    let hook_name = "coucou-hook";
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(p) = app.path().resolve(hook_name, tauri::path::BaseDirectory::Resource) {
         candidates.push(p);

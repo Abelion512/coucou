@@ -1,10 +1,9 @@
 //! The little bit of Unix the relay needs: where the socket is, and who is on
 //! the other end.
 //!
-//! This mirrors `win.rs`. On Windows the pipe name carries the SID because the
-//! named-pipe namespace is machine-wide; on Unix the socket lives under
-//! `$XDG_RUNTIME_DIR` — a per-user, per-boot directory only the owner can walk —
-//! and once connected we still ask the kernel who the peer is via
+//! The socket lives under `$XDG_RUNTIME_DIR` — a per-user, per-boot directory
+//! only the owner can walk — and once connected we still ask the kernel who the
+//! peer is via
 //! `SO_PEERCRED` before sending anything. Failing to vouch for the server
 //! refuses one hook event; trusting it could hand another local account the
 //! contents of every tool call.

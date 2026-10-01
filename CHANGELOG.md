@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Cleanup pass, no new features: the dead `cfg(windows)` dependency block (`windows`
+  crate, `keyring` Windows backend), the `windows_subsystem` attribute and the
+  `.exe` branch in the hook installer are gone from a Linux-only tree; the Claude
+  Code pill is Claude orange `#D97757` and Resend is no longer an integration on by
+  default (Notion is)
+- Dead code removed rather than kept "for later": `colorForProject` + its project
+  colour table, `STATE_SOUND`, `GREETING_END`, `WAKE_STRIP_W/H`,
+  `TOGGLEABLE_INTEGRATION_IDS`, `miniBotCount`, `releaseMiniBot`
+- Fixed the task ordering comparator, which returned `-1` for `integration_claude`
+  against itself; pills order is now Claude Code, agent pills, integrations, unknown
+  ids last
+- `CLAUDE.md` no longer tells agents to keep `NotchBuddy/`/`windows/` alive, and
+  describes keys as Secret Service instead of Keychain/Credential Manager
+
 - Chat can run on custom models: a configurable **API base** (any Messages-compatible
   relay — LiteLLM, a gateway, a Chinese model relay) makes the Anthropic API key
   optional, and a **Custom…** model field accepts any model id a relay exposes
