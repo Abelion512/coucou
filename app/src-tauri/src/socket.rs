@@ -6,8 +6,7 @@
 // its connection open: it waits for the island's decision and writes it back on
 // the same connection, which is how approving from the island works.
 //
-// Claude Code is never blocked by us. Three things guarantee it, exactly as on
-// Windows:
+// Claude Code is never blocked by us. Three things guarantee it:
 //   * coucou-hook gives the connection 300 ms and exits cleanly if we are closed;
 //   * we only wait for a human once the island has *confirmed* the card is on
 //     screen, so a paused island or a webview that is not listening costs a few

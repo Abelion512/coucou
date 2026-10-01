@@ -1,6 +1,5 @@
-// Small append-only log at %LOCALAPPDATA%\Coucou\coucou.log (Windows) or
-// $XDG_DATA_HOME/coucou/coucou.log (Linux) — the equivalent of nbLog() in
-// HookServer.swift. Nothing leaves the machine.
+// Small append-only log at $XDG_DATA_HOME/coucou/coucou.log — the equivalent of
+// nbLog() in HookServer.swift. Nothing leaves the machine.
 
 use std::io::Write;
 

@@ -5,7 +5,7 @@
 // one emits an `integration` event; the island owns the badge, the sound and the
 // 60 s auto-clear, exactly as the Swift handlers do.
 //
-// Nothing is polled until its key exists in the Credential Manager, and no
+// Nothing is polled until its key exists in the Secret Service keyring, and no
 // request goes anywhere the user has not configured.
 
 use std::sync::atomic::{AtomicBool, Ordering};

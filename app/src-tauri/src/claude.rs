@@ -2,7 +2,7 @@
 // chat with web search, and files sent as document/image/text blocks.
 //
 // Everything happens here rather than in the island: the API key never leaves
-// the Credential Manager, and file bytes never cross the IPC boundary.
+// the Secret Service keyring, and file bytes never cross the IPC boundary.
 
 use std::sync::Mutex;
 
@@ -11,8 +11,28 @@ use serde_json::{json, Value};
 
 use crate::secrets;
 
-const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
+const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+/// The Messages endpoint to call: the configured base URL with /v1/messages
+/// appended, unless the base already ends in /v1/messages. Same-body-compatible
+/// relays (Chinese model relays, LiteLLM, corporate gateways) then work with a
+/// single field. Empty/None → the official API.
+pub fn endpoint_for(api_base: Option<&str>) -> String {
+    let base = match api_base.map(str::trim) {
+        Some(b) if !b.is_empty() => b.trim_end_matches('/'),
+        _ => return DEFAULT_ENDPOINT.to_string(),
+    };
+    let lower = base.to_lowercase();
+    if lower.ends_with("/messages") {
+        // Already a full endpoint path — take it verbatim.
+        base.to_string()
+    } else if lower.ends_with("/v1") {
+        format!("{base}/messages")
+    } else {
+        format!("{base}/v1/messages")
+    }
+}
 /// Server-side fallback: on a policy decline the API retries the same request on
 /// a fallback model inside the same call, so the island never shows a dead end.
 const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
@@ -73,11 +93,18 @@ pub struct ChatReply {
 pub async fn send(
     chat: &Chat,
     model: &str,
+    api_base: Option<&str>,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    let key = secrets::get("anthropic-api-key")
-        .ok_or_else(|| "API key missing. Open settings.".to_string())?;
+    // A custom relay that authenticates itself (local proxy, LAN gateway) needs
+    // no key; the official API does.
+    let custom = api_base.map(str::trim).filter(|b| !b.is_empty());
+    let key = match secrets::get("anthropic-api-key") {
+        Some(k) => Some(k),
+        None if custom.is_some() => None,
+        None => return Err("API key missing. Open settings.".to_string()),
+    };
 
     let mut content: Vec<Value> = Vec::new();
 
@@ -114,7 +141,7 @@ pub async fn send(
         "messages": chat.snapshot(),
     });
 
-    let response = match call(&key, &body).await {
+    let response = match call(key.as_deref(), api_base, &body).await {
         Ok(v) => v,
         Err(err) => {
             chat.pop(); // keep the history consistent with what the model saw
@@ -157,19 +184,27 @@ pub async fn send(
     Ok(ChatReply { text })
 }
 
-async fn call(key: &str, body: &Value) -> Result<Value, String> {
+async fn call(key: Option<&str>, api_base: Option<&str>, body: &Value) -> Result<Value, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(90))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let response = client
-        .post(ENDPOINT)
-        .header("x-api-key", key)
+    let url = endpoint_for(api_base);
+    let mut request = client
+        .post(&url)
         .header("anthropic-version", ANTHROPIC_VERSION)
-        .header("anthropic-beta", FALLBACK_BETA)
         .header("content-type", "application/json")
-        .json(body)
+        .json(body);
+    // The server-side-fallback beta is an Anthropic-API feature; a relay that
+    // merely speaks the same wire format may reject unknown beta flags.
+    if api_base.map(str::trim).filter(|b| !b.is_empty()).is_none() {
+        request = request.header("anthropic-beta", FALLBACK_BETA);
+    }
+    if let Some(key) = key {
+        request = request.header("x-api-key", key);
+    }
+    let response = request
         .send()
         .await
         .map_err(|e| format!("Network error: {e}"))?;
@@ -259,5 +294,22 @@ mod tests {
         assert_eq!(base64(b"foob"), "Zm9vYg==");
         assert_eq!(base64(b"fooba"), "Zm9vYmE=");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
+
+    // A relay that speaks the Messages wire format must be reachable by merely
+    // pasting its base — every reasonable spelling lands on the same URL.
+    #[test]
+    fn endpoint_resolves_the_way_a_relay_base_is_spelled() {
+        let e = super::endpoint_for;
+        assert_eq!(e(None), super::DEFAULT_ENDPOINT);
+        assert_eq!(e(Some("")), super::DEFAULT_ENDPOINT);
+        assert_eq!(e(Some("  ")), super::DEFAULT_ENDPOINT);
+        assert_eq!(e(Some("https://relay.cn")), "https://relay.cn/v1/messages");
+        assert_eq!(e(Some("https://relay.cn/")), "https://relay.cn/v1/messages");
+        assert_eq!(e(Some("https://relay.cn/v1")), "https://relay.cn/v1/messages");
+        assert_eq!(e(Some("https://relay.cn/v1/")), "https://relay.cn/v1/messages");
+        assert_eq!(e(Some("https://relay.cn/v1/messages")), "https://relay.cn/v1/messages");
+        // A base that names /messages without /v1 is taken verbatim, not guessed at.
+        assert_eq!(e(Some("https://gw.lan/anthropic/messages")), "https://gw.lan/anthropic/messages");
     }
 }

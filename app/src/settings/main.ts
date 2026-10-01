@@ -84,7 +84,7 @@ function claudeSection(status: HookStatus): HTMLElement {
     if (!status.hookReady) {
       body.append(h("div", {
         class: "notice warn",
-        text: "coucou-hook.exe is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.",
+        text: "The coucou-hook relay is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.",
       }));
     }
 
@@ -180,8 +180,25 @@ const MODELS: [string, string][] = [
 ];
 
 function apiSection(hasKey: boolean): HTMLElement {
-  const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — the chat needs one." });
+  // A non-empty API base means a Messages-compatible relay: the key becomes
+  // optional because many relays authenticate themselves.
+  const usingRelay = () => settings.apiBase.trim().length > 0;
+  const dot = statusDot(hasKey || usingRelay());
+  const state = h("span", { class: "hint" });
+
+  const baseField = h("input", {
+    type: "text",
+    placeholder: "https://api.anthropic.com",
+    value: settings.apiBase,
+    style: "flex:1 1 auto;min-width:0",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  baseField.addEventListener("change", () => {
+    settings.apiBase = baseField.value.trim();
+    void save();
+    void refresh();
+  });
 
   const field = h("input", {
     type: "password",
@@ -197,10 +214,15 @@ function apiSection(hasKey: boolean): HTMLElement {
 
   async function refresh() {
     const present = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
-    state.textContent = present
-      ? "Key saved in the Windows Credential Manager."
-      : "No key yet — the chat needs one.";
+    const relay = usingRelay();
+    dot.style.background = present || relay ? "#22c55e" : "#f4505e";
+    state.textContent = relay
+      ? present
+        ? "Relay active — requests go to the base above, with the stored key."
+        : "Relay active — requests go to the base above, no API key needed."
+      : present
+        ? "Key saved in the Secret Service keyring."
+        : "No key yet — the chat needs one, or point the base at a relay.";
     field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
     clearBtn.style.display = present ? "" : "none";
   }
@@ -230,26 +252,70 @@ function apiSection(hasKey: boolean): HTMLElement {
     }
   });
 
+  // Known models in a dropdown, plus "Custom…" for whatever a relay exposes —
+  // the stored model is always shown even when it is not in the list.
+  const CUSTOM = "__custom__";
   const model = h("select", {}) as HTMLSelectElement;
   for (const [id, label] of MODELS) model.append(h("option", { value: id, text: label }));
   if (!MODELS.some(([id]) => id === settings.model)) {
     model.append(h("option", { value: settings.model, text: settings.model }));
   }
   model.value = settings.model;
+  model.append(h("option", { value: CUSTOM, text: "Custom…" }));
+
+  const customField = h("input", {
+    type: "text",
+    placeholder: "model id, e.g. glm-4.7 or deepseek-v4",
+    style: "flex:1 1 auto;min-width:0",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const customRow = h("div", { class: "row" }, h("label", { text: "Model id" }), customField);
+  customRow.style.display = "none";
+  const syncCustom = () => {
+    const show = model.value === CUSTOM;
+    customRow.style.display = show ? "" : "none";
+    if (show && !MODELS.some(([id]) => id === settings.model)) {
+      customField.value = settings.model;
+    }
+  };
+  customField.addEventListener("change", () => {
+    const value = customField.value.trim();
+    if (!value) return; // an empty model id would silently break every request
+    if (![...model.options].some((o) => o.value === value)) {
+      model.append(h("option", { value, text: value }));
+    }
+    model.value = value;
+    settings.model = value;
+    void save();
+  });
   model.addEventListener("change", () => {
+    if (model.value === CUSTOM) {
+      syncCustom();
+      customField.focus();
+      return;
+    }
     settings.model = model.value;
     void save();
+    syncCustom();
   });
 
   clearBtn.style.display = hasKey ? "" : "none";
+  void refresh();
 
   return h(
     "section",
     {},
     h("h2", {}, dot, h("span", { text: "Claude" })),
     state,
+    h("div", {
+      class: "hint",
+      text: "Point the base at a Messages-compatible relay (a gateway, LiteLLM, a Chinese model relay) to use custom models — the key becomes optional. Empty = the official Anthropic API.",
+    }),
+    h("div", { class: "row" }, h("label", { text: "API base" }), baseField),
     h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
     h("div", { class: "row" }, h("label", { text: "Model" }), model),
+    customRow,
     feedback,
   );
 }
@@ -260,7 +326,7 @@ interface IntegrationDef {
   id: string;
   name: string;
   color: string;
-  /** Credential Manager keys, in the order they are shown. */
+  /** Secret Service keys, in the order they are shown. */
   fields: { key: string; label: string; placeholder: string; secret: boolean }[];
 }
 
@@ -292,7 +358,7 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
 
   function updateNote() {
     const used = settings.activeIntegrations.length;
-    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
+    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Secret Service keyring, never on disk.`;
   }
 
   for (const def of INTEGRATIONS) {

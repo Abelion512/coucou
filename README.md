@@ -79,7 +79,7 @@ Click the Coucou icon in the system tray → **Settings…**
 | What | Why | Where the key goes |
 |---|---|---|
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
-| **Anthropic API key** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet) |
+| **Anthropic API key / API base** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet). Point **API base** at any Messages-compatible relay (LiteLLM, a gateway, a Chinese model relay) to run custom models — with a relay the key is optional |
 | Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Secret Service, all optional |
 
 If Coucou isn't running, the hook exits immediately: **Claude Code is never blocked.**

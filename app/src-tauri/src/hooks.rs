@@ -5,9 +5,8 @@
 // touching anybody else's hooks, show the diff, and write only after an explicit
 // click. Uninstall removes Coucou's entries and nothing else.
 //
-// The command is only the quoted exe path in forward slashes plus the event name:
-// on Windows Claude Code runs hook commands through Git Bash, and anything with
-// PowerShell or cmd in it breaks.
+// The command is the quoted relay path plus the event name — one shell-agnostic
+// word, so it behaves the same whatever shell Claude Code spawns hooks with.
 
 use std::path::{Path, PathBuf};
 
@@ -312,9 +311,9 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
     Ok(backup.to_string_lossy().to_string())
 }
 
-/// Copies coucou-hook.exe into %LOCALAPPDATA%\Coucou\bin on launch.
+/// Copies the coucou-hook relay into ~/.local/share/coucou/bin on launch.
 /// In a bundled install it comes from the app resources; in `tauri dev` it sits
-/// next to coucou.exe in the workspace target directory.
+/// next to the coucou binary in the workspace target directory.
 ///
 /// Every candidate is tried rather than just the first, because getting this
 /// wrong is silent and fatal: `resources` used to be a glob, which made NSIS
@@ -467,6 +466,15 @@ mod tests {
         bytes.extend_from_slice(br#"{"model":"opus","hooks":{}}"#);
         let parsed = parse_settings(&bytes, WHERE).expect("a BOM must not defeat the parser");
         assert_eq!(parsed["model"], "opus");
+    }
+
+    // The settings window names this relay in its warning; a Windows-era
+    // "coucou-hook.exe" string there is how a Linux user ends up confused.
+    #[test]
+    fn the_hook_command_names_the_linux_relay_without_an_exe_suffix() {
+        let cmd = hook_command("PreToolUse");
+        assert!(cmd.ends_with(" PreToolUse"), "got: {cmd}");
+        assert!(!cmd.to_lowercase().contains(".exe"), "got: {cmd}");
     }
 
     #[test]

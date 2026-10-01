@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Chat can run on custom models: a configurable **API base** (any Messages-compatible
+  relay — LiteLLM, a gateway, a Chinese model relay) makes the Anthropic API key
+  optional, and a **Custom…** model field accepts any model id a relay exposes
+- "Open terminal"/editor launcher chain now tries Zed, Kate and gedit beyond VS Code
+  builds, so editor-less setups (Antigravity, plain text editors) still get a useful
+  fallback; the Claude Code pill is labelled "Claude Code", not "VS Code"
+
+- Settings window no longer claims Windows-era things on Linux: the missing-relay
+  warning says `coucou-hook` (no `.exe`) and key storage is described as the Secret
+  Service keyring; stale Windows/macOS comments swept from src-tauri and the front end
+
 - npm → bun for the front end (`bun.lock`, `bunx tauri`, `bun run build`)
 - Linux CI workflow (bun + cargo tests, .deb/AppImage on `linux-v*` tags), ahead of the
   upstream Linux PRs (#42, #44)

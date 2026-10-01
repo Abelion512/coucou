@@ -1,6 +1,6 @@
-// API keys live in the Windows Credential Manager (Windows) or the Secret
-// Service (GNOME Keyring / KWallet over D-Bus, Linux) — never on disk and never
-// in the front end. The island can only ask whether a key is present.
+// API keys live in the Secret Service (GNOME Keyring / KWallet over D-Bus) —
+// never on disk and never in the front end. The island can only ask whether a
+// key is present.
 
 use keyring::Entry;
 

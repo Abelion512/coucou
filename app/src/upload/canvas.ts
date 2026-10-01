@@ -490,7 +490,7 @@ function drawEye(ctx: CanvasRenderingContext2D, shape: UploadEyeShape, w: number
 
 /**
  * The generic sheet with a folded corner. macOS swaps in the real file icon from
- * NSWorkspace; Windows has no equivalent reachable from the webview, so this is
+ * NSWorkspace; Linux has no equivalent reachable from the webview, so this is
  * the shape in every case — it is the same fallback the Swift draws.
  */
 function drawDoc(ctx: CanvasRenderingContext2D, cx: number, cy: number, wsc: number, hsc: number) {

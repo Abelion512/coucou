@@ -1,7 +1,6 @@
 // Claude Code hook events → island state.
 // Port of HookServer.processEvent / processPermissionRequest from the macOS app.
-// Difference from macOS: no terminal filter. On Windows the hook fires from any
-// terminal (Windows Terminal, VS Code, PowerShell…) and all of them are handled.
+// No terminal filter: the hook fires from any terminal and all of them are handled.
 
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
@@ -113,7 +112,7 @@ function clearSession() {
   if (!t) return;
   t.steps = [];
   t.stepIndex = 0;
-  t.name = "VS Code";
+  t.name = "Claude Code";
   t.pillBadge = null;
 }
 

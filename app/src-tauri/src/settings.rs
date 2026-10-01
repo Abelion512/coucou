@@ -1,6 +1,5 @@
-// Preferences, stored as plain JSON in %APPDATA%\Coucou (Windows) or
-// $XDG_CONFIG_HOME/coucou (Linux). No secret ever lands here — API keys live in
-// the Credential Manager or the Secret Service.
+// Preferences, stored as plain JSON in $XDG_CONFIG_HOME/coucou. No secret ever
+// lands here — API keys live in the Secret Service keyring.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -21,6 +20,11 @@ pub struct Settings {
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
+    /// Base URL of a Messages-compatible relay (Chinese model relay, LiteLLM,
+    /// corporate gateway). Empty = the official Anthropic API, which then also
+    /// requires the API key.
+    #[serde(default)]
+    pub api_base: String,
 }
 
 fn default_model() -> String {
@@ -44,6 +48,7 @@ impl Default for Settings {
             autostart: false,
             hooks_installed: false,
             model: default_model(),
+            api_base: String::new(),
         }
     }
 }

@@ -19,9 +19,9 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Which agent a task or event belongs to. Serialized camelCase for the front
 /// end, which keys colours and labels off it. The full vocabulary is the
-/// contract: ClaudeCode events are produced by the hook relay (Windows pipe and
-/// Linux socket) and joined into this bus in the front-end state machine, so
-/// some variants are reserved on either platform.
+/// contract: ClaudeCode events are produced by the hook relay (the Unix socket)
+/// and joined into this bus in the front-end state machine, so some variants
+/// stay reserved for it.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]

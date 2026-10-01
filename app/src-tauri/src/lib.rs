@@ -135,12 +135,13 @@ fn open_url_impl(url: &str) {
     let _ = Command::new("xdg-open").arg(url).spawn();
 }
 
-/// "Open terminal" opens the working folder in VS Code (or Codium), falling
-/// back to whatever is registered for folders.
+/// "Open terminal"/"Open editor" — the folder goes to the first editor on
+/// PATH. `code` is only first because it used to be the only one; the fallback
+/// ends at the file manager so the button still does something useful.
 #[tauri::command]
-fn open_in_vscode(path: Option<String>) -> bool {
+fn open_in_editor(path: Option<String>) -> bool {
     if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
-        for launcher in ["code", "codium"] {
+        for launcher in ["code", "codium", "antigravity", "zed", "kate", "gedit"] {
             if Command::new(launcher).arg(p).spawn().is_ok() {
                 return true;
             }
@@ -227,8 +228,11 @@ async fn chat_send(
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    let model = shared.settings.lock().unwrap().model.clone();
-    claude::send(&chat, &model, query, context).await
+    let (model, api_base) = {
+        let s = shared.settings.lock().unwrap();
+        (s.model.clone(), s.api_base.clone())
+    };
+    claude::send(&chat, &model, Some(&api_base), query, context).await
 }
 
 #[tauri::command]
@@ -258,7 +262,7 @@ fn secret_clear(key: String) -> Result<(), String> {
     secrets::clear(&key)
 }
 
-/// Opens the configured n8n instance — the URL lives in the Credential Manager.
+/// Opens the configured n8n instance — the URL lives in the Secret Service keyring.
 #[tauri::command]
 fn open_n8n() {
     if let Some(url) = secrets::get("n8n-url") {
@@ -367,7 +371,7 @@ pub fn run() {
             focus_window,
             reposition,
             open_url,
-            open_in_vscode,
+            open_in_editor,
             quit_app,
             hooks_status,
             hooks_preview,

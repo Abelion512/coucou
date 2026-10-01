@@ -1,8 +1,7 @@
 name: Linux
 
-# Builds and tests the Linux app from the same Tauri sources as the Windows
-# app. Publishes the .deb and AppImage on `linux-v*` tags; pushed from the
-# upstream Linux PRs (#42, #44) so this fork stays a step ahead of them.
+# Builds and tests the Linux app. Publishes the .deb and AppImage on `linux-v*`
+# tags.
 
 on:
   push:
