@@ -17,7 +17,14 @@ pub fn line(message: impl AsRef<str>) {
     if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
         let _ = std::fs::remove_file(&path);
     }
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        // 0600 — hook events name tools and projects; that is the user's
+        // business, not the rest of the machine's (mirrors the macOS port).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        }
         let _ = writeln!(file, "{stamp} {}", message.as_ref());
     }
 }

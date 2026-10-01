@@ -42,6 +42,8 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(108);
 /// see for nearly two minutes.
 const ACK_TIMEOUT: Duration = Duration::from_millis(800);
 const MAX_PAYLOAD: usize = 1 << 20;
+/// A client that stops writing is dropped after this long.
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the island can say about a permission request.
 pub enum Reply {
@@ -90,6 +92,8 @@ pub fn start(app: AppHandle) {
                 log::line("cannot create the relay socket directory".to_string());
                 return;
             }
+            // 0700 — not world-readable, as the macOS port hardened it.
+            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
         }
         let listener = match UnixListener::bind(&path) {
             Ok(l) => l,
@@ -105,8 +109,20 @@ pub fn start(app: AppHandle) {
         loop {
             match listener.accept().await {
                 Ok((stream, _addr)) => {
+                    // Connection ceiling, as the macOS port: a runaway hook
+                    // storm must not exhaust the runtime's task budget.
+                    let mut live = LIVE_CONNECTIONS.lock().unwrap();
+                    if *live >= MAX_CONNECTIONS {
+                        drop(live);
+                        continue;
+                    }
+                    *live += 1;
+                    drop(live);
                     let app = app.clone();
-                    tauri::async_runtime::spawn(async move { handle(app, stream).await });
+                    tauri::async_runtime::spawn(async move {
+                        handle(app, stream).await;
+                        *LIVE_CONNECTIONS.lock().unwrap() -= 1;
+                    });
                 }
                 Err(_) => {
                     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -115,6 +131,10 @@ pub fn start(app: AppHandle) {
         }
     });
 }
+
+/// Concurrent relay connections, matching the macOS port's ceiling.
+const MAX_CONNECTIONS: usize = 32;
+static LIVE_CONNECTIONS: Mutex<usize> = Mutex::new(0);
 
 async fn handle(app: AppHandle, stream: UnixStream) {
     // Refuse to serve another account's relay before reading a byte: trusting a
@@ -127,16 +147,20 @@ async fn handle(app: AppHandle, stream: UnixStream) {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     let mut stream = stream;
+    // 5 s receive timeout — a client that connects and then stops writing must
+    // not hold a task slot forever (mirrors the macOS port's SO_RCVTIMEO).
     loop {
-        match stream.read(&mut chunk).await {
-            Ok(0) => break,
-            Ok(n) => {
+        match tokio::time::timeout(READ_TIMEOUT, stream.read(&mut chunk)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => {
                 buf.extend_from_slice(&chunk[..n]);
                 if buf.contains(&b'\n') || buf.len() > MAX_PAYLOAD {
                     break;
                 }
             }
-            Err(_) => return,
+            // Timeout or IO error: drop the connection, the hook has its own
+            // deadline and will have moved on.
+            _ => return,
         }
     }
     let line = match buf.iter().position(|b| *b == b'\n') {
