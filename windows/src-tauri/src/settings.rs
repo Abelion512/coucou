@@ -1,5 +1,6 @@
-// Preferences, stored as plain JSON in %APPDATA%\Coucou\settings.json.
-// No secret ever lands here — API keys live in the Windows Credential Manager.
+// Preferences, stored as plain JSON in %APPDATA%\Coucou (Windows) or
+// $XDG_CONFIG_HOME/coucou (Linux). No secret ever lands here — API keys live in
+// the Credential Manager or the Secret Service.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -47,24 +48,56 @@ impl Default for Settings {
     }
 }
 
-/// %APPDATA%\Coucou
+/// %APPDATA%\Coucou on Windows, $XDG_CONFIG_HOME/coucou on Linux.
 pub fn config_dir() -> PathBuf {
-    let base = std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("Coucou")
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        base.join("Coucou")
+    }
+    #[cfg(unix)]
+    {
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|h| PathBuf::from(h).join(".config"))
+                    .unwrap_or_else(|| PathBuf::from("."))
+            });
+        base.join("coucou")
+    }
 }
 
-/// %LOCALAPPDATA%\Coucou — where coucou-hook.exe and the log live.
+/// %LOCALAPPDATA%\Coucou (Windows) or $XDG_DATA_HOME/coucou (Linux) — where
+/// the hook binary and the log live.
 pub fn local_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("Coucou")
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        base.join("Coucou")
+    }
+    #[cfg(unix)]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|h| PathBuf::from(h).join(".local/share"))
+                    .unwrap_or_else(|| PathBuf::from("."))
+            });
+        base.join("coucou")
+    }
 }
 
 pub fn hook_exe_path() -> PathBuf {
-    local_dir().join("bin").join("coucou-hook.exe")
+    #[cfg(windows)]
+    return local_dir().join("bin").join("coucou-hook.exe");
+    #[cfg(unix)]
+    return local_dir().join("bin").join("coucou-hook");
 }
 
 fn settings_path() -> PathBuf {

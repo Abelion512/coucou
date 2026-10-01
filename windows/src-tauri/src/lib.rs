@@ -1,17 +1,25 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
+mod agents;
 mod claude;
 mod files;
 mod hooks;
 mod integrations;
 mod island;
+#[cfg(unix)]
+mod keystore;
 mod log;
+#[cfg(windows)]
 mod pipe;
 mod secrets;
 mod settings;
+#[cfg(unix)]
+mod socket;
 mod tray;
+#[cfg(windows)]
 mod win_user;
 
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::atomic::Ordering;
@@ -25,10 +33,21 @@ use claude::{Chat, ChatContext, ChatReply};
 use files::DroppedFile;
 use hooks::{HookPreview, HookStatus};
 use island::{PollGate, ScreenInfo};
+#[cfg(windows)]
 use pipe::Pending;
+#[cfg(unix)]
+use socket::Pending;
+
+/// The hook relay, whichever transport the platform uses. Call sites below stay
+/// identical on both sides of the cfg split.
+#[cfg(windows)]
+use pipe as relay;
+#[cfg(unix)]
+use socket as relay;
 use settings::Settings;
 
 /// Keeps spawned helpers from flashing a console window.
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub struct Shared {
@@ -126,10 +145,21 @@ fn open_url(url: String) {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return;
     }
+    open_url_impl(&url);
+}
+
+/// Windows opens URLs through the shell; Linux through the portals / xdg-open.
+#[cfg(windows)]
+fn open_url_impl(url: &str) {
     let _ = Command::new("rundll32.exe")
-        .args(["url.dll,FileProtocolHandler", &url])
+        .args(["url.dll,FileProtocolHandler", url])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn();
+}
+
+#[cfg(unix)]
+fn open_url_impl(url: &str) {
+    let _ = Command::new("xdg-open").arg(url).spawn();
 }
 
 /// "Open terminal" opens the working folder in VS Code when `code` is on PATH,
@@ -140,24 +170,42 @@ fn open_in_vscode(path: Option<String>) -> bool {
     // whoever is using Claude Code, and cmd would happily read `&`, `^` and `%`
     // in a folder name as syntax. Finding the launcher ourselves and handing the
     // path over as a separate argument keeps it a path.
-    if let Some(code) = find_on_path("code") {
-        let mut cmd = Command::new(code);
-        if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
-            cmd.arg(p);
+    #[cfg(windows)]
+    {
+        if let Some(code) = find_on_path("code") {
+            let mut cmd = Command::new(code);
+            if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
+                cmd.arg(p);
+            }
+            if cmd.creation_flags(CREATE_NO_WINDOW).spawn().is_ok() {
+                return true;
+            }
         }
-        if cmd.creation_flags(CREATE_NO_WINDOW).spawn().is_ok() {
+        if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
+            let _ = Command::new("explorer").arg(p).spawn();
+        }
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        // Linux: VS Code, Codium, or whatever is registered for folders.
+        if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
+            for launcher in ["code", "codium"] {
+                if Command::new(launcher).arg(p).spawn().is_ok() {
+                    return true;
+                }
+            }
+            let _ = Command::new("xdg-open").arg(p).spawn();
             return true;
         }
+        false
     }
-    if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
-        let _ = Command::new("explorer").arg(p).spawn();
-    }
-    false
 }
 
 /// Our own `where`: walks %PATH% against %PATHEXT%, no shell involved.
 /// Rust quotes arguments correctly for `.cmd`/`.bat` targets since 1.77, so
 /// spawning `code.cmd` directly is safe.
+#[cfg(windows)]
 fn find_on_path(stem: &str) -> Option<std::path::PathBuf> {
     let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
     let dirs = std::env::var_os("PATH")?;
@@ -220,7 +268,7 @@ fn hooks_apply(
 
 #[tauri::command]
 fn approval_decision(app: AppHandle, request_id: String, decision: String) {
-    pipe::answer(&app, &request_id, &decision);
+    relay::answer(&app, &request_id, &decision);
 }
 
 /// The island has the card on screen, so the long wait for a human may begin.
@@ -228,14 +276,14 @@ fn approval_decision(app: AppHandle, request_id: String, decision: String) {
 /// what stops a paused or unresponsive island from freezing Claude Code.
 #[tauri::command]
 fn approval_ack(app: AppHandle, request_id: String) {
-    pipe::acknowledge(&app, &request_id);
+    relay::acknowledge(&app, &request_id);
 }
 
 /// Nobody can act on this request — the island is paused, or another card is
 /// already up. Claude Code falls back to asking in the terminal immediately.
 #[tauri::command]
 fn approval_decline(app: AppHandle, request_id: String) {
-    pipe::decline(&app, &request_id);
+    relay::decline(&app, &request_id);
 }
 
 // ── Chat, files and secrets ───────────────────────────────────────────────────
@@ -425,8 +473,23 @@ pub fn run() {
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);
-            pipe::start(handle.clone());
+            // The hook relay: named pipe on Windows, Unix socket on Linux.
+            #[cfg(windows)]
+            relay::start(handle.clone());
+            #[cfg(unix)]
+            relay::start(handle.clone());
             integrations::start(handle.clone());
+            // The other agents: OpenCode, Hermes, Freebuff/Codebuff. Their
+            // events funnel through the bus and reach the island as `agent`
+            // events; the bus consumer owns the receiving end.
+            let (bus, mut rx) = agents::AgentBus::new();
+            let bus_app = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    agents::emit(&bus_app, &event);
+                }
+            });
+            agents::start(handle.clone(), &bus);
             Ok(())
         })
         .run(tauri::generate_context!())

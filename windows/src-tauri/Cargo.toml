@@ -19,8 +19,10 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+
+[target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
@@ -32,3 +34,14 @@ windows = { version = "0.61", features = [
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
+libc = "0.2"
+# Inotify file watching for the Freebuff/Codebuff adapter.
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+futures-util = { version = "0.3", default-features = false }
+# Cursor position without pulling GTK onto the poll thread.
+mouse_position = "0.1"
+# Best-effort skip-taskbar / type hint on X11 (Tauri already links gtk).
+gtk = "0.18"

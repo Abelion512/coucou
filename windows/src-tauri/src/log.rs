@@ -1,18 +1,13 @@
-// Small append-only log at %LOCALAPPDATA%\Coucou\coucou.log — the Windows
-// equivalent of nbLog() in HookServer.swift. Nothing leaves the machine.
+// Small append-only log at %LOCALAPPDATA%\Coucou\coucou.log (Windows) or
+// $XDG_DATA_HOME/coucou/coucou.log (Linux) — the equivalent of nbLog() in
+// HookServer.swift. Nothing leaves the machine.
 
 use std::io::Write;
-
-use windows::Win32::System::SystemInformation::GetLocalTime;
 
 use crate::settings;
 
 pub fn line(message: impl AsRef<str>) {
-    let t = unsafe { GetLocalTime() };
-    let stamp = format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond
-    );
+    let stamp = timestamp();
     let dir = settings::local_dir();
     if std::fs::create_dir_all(&dir).is_err() {
         return;
@@ -24,5 +19,41 @@ pub fn line(message: impl AsRef<str>) {
     }
     if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{stamp} {}", message.as_ref());
+    }
+}
+
+/// Local wall-clock time, platform style.
+#[cfg(windows)]
+fn timestamp() -> String {
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond
+    )
+}
+
+#[cfg(unix)]
+fn timestamp() -> String {
+    let secs = unsafe { libc::time(std::ptr::null_mut()) };
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&secs, &mut tm) };
+    let mut buf = [0u8; 20];
+    let len = unsafe {
+        libc::strftime(
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+            b"%Y-%m-%d %H:%M:%S\0".as_ptr().cast(),
+            &tm,
+        )
+    };
+    String::from_utf8_lossy(&buf[..len]).into_owned()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #[test]
+    fn timestamp_shape() {
+        let t = super::timestamp();
+        assert_eq!(t.len(), 19, "YYYY-MM-DD HH:MM:SS, got {t}");
     }
 }

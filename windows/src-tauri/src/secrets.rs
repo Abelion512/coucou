@@ -1,7 +1,10 @@
-// API keys live in the Windows Credential Manager, never on disk and never in
-// the front end — the island can only ask whether a key is present.
+// API keys live in the Windows Credential Manager (Windows) or the Secret
+// Service (GNOME Keyring / KWallet over D-Bus, Linux) — never on disk and never
+// in the front end. The island can only ask whether a key is present.
 
 use keyring::Entry;
+
+use crate::keystore;
 
 const SERVICE: &str = "fr.louisraille.coucou";
 
@@ -22,7 +25,7 @@ fn entry(key: &str) -> Option<Entry> {
     if !KNOWN_KEYS.contains(&key) {
         return None;
     }
-    Entry::new(SERVICE, key).ok()
+    keystore::entry(SERVICE, key)
 }
 
 pub fn get(key: &str) -> Option<String> {

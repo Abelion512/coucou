@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager};
-use windows::Win32::System::SystemInformation::GetLocalTime;
 
 use crate::settings;
 
@@ -59,9 +58,18 @@ pub struct HookPreview {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("USERPROFILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+    #[cfg(unix)]
+    {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
 }
 
 pub fn settings_path() -> PathBuf {
@@ -197,11 +205,30 @@ fn pretty(v: &Value) -> String {
 /// Down to the second: installing then uninstalling in the same minute must not
 /// quietly overwrite the first backup.
 fn stamp() -> String {
-    let t = unsafe { GetLocalTime() };
-    format!(
-        "{:04}{:02}{:02}-{:02}{:02}{:02}",
-        t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond
-    )
+    #[cfg(windows)]
+    {
+        let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+        format!(
+            "{:04}{:02}{:02}-{:02}{:02}{:02}",
+            t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond
+        )
+    }
+    #[cfg(unix)]
+    {
+        let secs = unsafe { libc::time(std::ptr::null_mut()) };
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        unsafe { libc::localtime_r(&secs, &mut tm) };
+        let mut buf = [0u8; 24];
+        let len = unsafe {
+            libc::strftime(
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                b"%Y%m%d-%H%M%S\0".as_ptr().cast(),
+                &tm,
+            )
+        };
+        String::from_utf8_lossy(&buf[..len]).into_owned()
+    }
 }
 
 fn backup_path() -> PathBuf {
@@ -319,25 +346,26 @@ pub fn ensure_hook_exe(app: &AppHandle) {
         return;
     }
 
+    let hook_name = if cfg!(windows) { "coucou-hook.exe" } else { "coucou-hook" };
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(p) = app.path().resolve("coucou-hook.exe", tauri::path::BaseDirectory::Resource) {
+    if let Ok(p) = app.path().resolve(hook_name, tauri::path::BaseDirectory::Resource) {
         candidates.push(p);
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             // Installed build, then `tauri dev` (target/debug) next to the
             // release hook the pre-build step produces.
-            candidates.push(parent.join("coucou-hook.exe"));
-            candidates.push(parent.join("../release/coucou-hook.exe"));
+            candidates.push(parent.join(hook_name));
+            candidates.push(parent.join(format!("../release/{hook_name}")));
             // Belt and braces: where the old glob form used to land it.
-            candidates.push(parent.join("_up_/target/release/coucou-hook.exe"));
+            candidates.push(parent.join(format!("_up_/target/release/{hook_name}")));
         }
     }
 
     let tried: Vec<String> = candidates.iter().map(|p| p.display().to_string()).collect();
     let Some(src) = candidates.into_iter().find(|p| p.exists()) else {
         crate::log::line(format!(
-            "coucou-hook.exe not found — Claude Code hooks cannot work. Looked in: {}",
+            "{hook_name} not found — Claude Code hooks cannot work. Looked in: {}",
             tried.join(", ")
         ));
         return;
@@ -354,8 +382,17 @@ pub fn ensure_hook_exe(app: &AppHandle) {
     // copy is fine, it is the same relay.
     if let Err(err) = std::fs::copy(&src, &dest) {
         if !dest.exists() {
-            crate::log::line(format!("could not install coucou-hook.exe: {err}"));
+            crate::log::line(format!("could not install {hook_name}: {err}"));
         }
+    }
+    // The relay runs hooks with the user's privileges and talks to a socket in
+    // $XDG_RUNTIME_DIR: it must be executable by exactly its owner.
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata(&dest) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = meta.permissions();
+        perms.set_mode(0o700);
+        let _ = std::fs::set_permissions(&dest, perms);
     }
 }
 
@@ -511,14 +548,16 @@ mod tests {
         assert_ne!(fingerprint(b""), fingerprint(b"{}"));
     }
 
-    /// Everything filesystem-shaped lives in one test on purpose: it points
-    /// USERPROFILE at a temp directory, and that is process-wide.
+    /// Everything filesystem-shaped lives in one test on purpose: it points the
+    /// home variable at a temp directory, and that is process-wide. Both spellings
+    /// are set because the home resolution is platform-specific.
     #[test]
     fn writing_backs_up_preserves_and_refuses_a_changed_file() {
         let tmp = std::env::temp_dir().join(format!("coucou-hooks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join(".claude")).unwrap();
         std::env::set_var("USERPROFILE", &tmp);
+        std::env::set_var("HOME", &tmp);
 
         let path = settings_path();
         assert!(path.starts_with(&tmp), "the test must not touch the real home");

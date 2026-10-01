@@ -28,6 +28,8 @@ const DECISION_BUDGET: Duration = Duration::from_secs(110);
 
 /// `ERROR_PIPE_BUSY` — every instance is serving someone else right now. This is
 /// the one error worth retrying: the server exists and a slot will free up.
+/// (Unix has no busy state: a missing socket file is the "closed" signal.)
+#[cfg(windows)]
 const ERROR_PIPE_BUSY: i32 = 231;
 
 /// Fields that are pointless to forward and can be enormous (a whole file read,
@@ -37,22 +39,34 @@ const DROPPED_FIELDS: &[&str] = &["tool_response", "transcript_path"];
 /// less than this anyway.
 const MAX_FIELD_LEN: usize = 2_000;
 
-mod win;
+mod decision;
 
-/// `\\.\pipe\coucou-<sid>`. The SID keeps two accounts on the same machine from
-/// ever meeting on the same pipe; the name falls back to the user name only if
-/// the SID cannot be read at all, which should not happen.
-fn pipe_path() -> String {
+#[cfg(windows)]
+mod win;
+#[cfg(unix)]
+mod unix;
+
+/// Endpoint of the relay: named pipe on Windows, Unix socket on Linux/Unix.
+/// The SID (Windows) / per-user XDG_RUNTIME_DIR + SO_PEERCRED (Unix) keep two
+/// accounts on the same machine from ever meeting on `coucou-*`.
+#[cfg(windows)]
+fn relay_path() -> String {
     let key = win::current_user_sid()
         .unwrap_or_else(|| std::env::var("USERNAME").unwrap_or_else(|_| "user".into()));
     format!(r"\\.\pipe\coucou-{key}")
 }
 
+#[cfg(unix)]
+fn relay_path() -> String {
+    unix::socket_path()
+}
+
 /// Opens the pipe. Retries only while the server is busy: any other error means
 /// there is nothing to talk to, and waiting would only delay Claude Code.
+#[cfg(windows)]
 fn connect() -> Option<std::fs::File> {
     use std::os::windows::io::AsRawHandle;
-    let path = pipe_path();
+    let path = relay_path();
     let deadline = Instant::now() + CONNECT_TIMEOUT;
     loop {
         match std::fs::OpenOptions::new().read(true).write(true).open(&path) {
@@ -70,6 +84,8 @@ fn connect() -> Option<std::fs::File> {
         }
     }
 }
+
+use decision::decision_json;
 
 fn main() {
     let Some((payload, event)) = read_event() else { std::process::exit(0) };
@@ -97,20 +113,32 @@ fn main() {
     std::process::exit(0);
 }
 
-/// The documented PermissionRequest output. Anything we do not recognise prints
-/// nothing at all rather than guessing — silence is the safe answer.
-/// See https://code.claude.com/docs/en/hooks
-fn decision_json(decision: &str) -> Option<String> {
-    let behavior = match decision.trim() {
-        // "always" still answers a plain allow; remembering it is the island's
-        // business, not Claude Code's.
-        "allow" | "always" => r#"{"behavior":"allow"}"#.to_string(),
-        "deny" => r#"{"behavior":"deny","message":"Denied from Coucou"}"#.to_string(),
-        _ => return None,
-    };
-    Some(format!(
-        r#"{{"hookSpecificOutput":{{"hookEventName":"PermissionRequest","decision":{behavior}}}}}"#
-    ))
+/// The documented PermissionRequest output lives in `decision.rs`, shared by
+/// both platforms.
+
+/// Unix half of connect(): a missing socket IS the "Coucou is closed" signal
+/// (ENOENT leaves immediately instead of spending the budget), and the peer's
+/// uid is checked with SO_PEERCRED before anything is sent.
+#[cfg(unix)]
+fn connect() -> Option<std::os::unix::net::UnixStream> {
+    let path = relay_path();
+    let deadline = Instant::now() + CONNECT_TIMEOUT;
+    loop {
+        match std::os::unix::net::UnixStream::connect(&path) {
+            Ok(stream) => {
+                // Another account's server gets nothing from us.
+                return unix::peer_is_same_user(&stream).then_some(stream);
+            }
+            Err(err)
+                if err.kind() == std::io::ErrorKind::NotFound
+                    || err.kind() == std::io::ErrorKind::ConnectionRefused =>
+            {
+                return None;
+            }
+            Err(_) if Instant::now() >= deadline => return None,
+            Err(_) => std::thread::sleep(Duration::from_millis(15)),
+        }
+    }
 }
 
 /// Reads stdin and returns the payload to forward plus the event name.
@@ -232,28 +260,6 @@ fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn decision_json_matches_the_documented_shape() {
-        assert_eq!(
-            decision_json("allow").unwrap(),
-            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
-        );
-        assert_eq!(
-            decision_json("deny").unwrap(),
-            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from Coucou"}}}"#
-        );
-        // "always" is an island concept; Claude Code just gets an allow.
-        assert!(decision_json("always").unwrap().contains(r#""behavior":"allow""#));
-    }
-
-    #[test]
-    fn anything_unrecognised_prints_nothing() {
-        assert!(decision_json("").is_none());
-        assert!(decision_json("maybe").is_none());
-        // The shape the app used to send must not be mistaken for a decision.
-        assert!(decision_json(r#"{"permissionDecision":"allow"}"#).is_none());
-    }
 
     #[test]
     fn long_strings_are_cut_on_a_char_boundary() {
