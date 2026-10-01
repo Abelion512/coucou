@@ -4,7 +4,7 @@
 
 # Coucou
 
-**A tiny friend that lives in your Mac's notch — or at the top of your screen on Windows — and keeps an eye on your Claude Code sessions.**
+**A tiny friend that lives in your Mac's notch — at the top of your screen on Windows and Linux — and keeps an eye on your Claude Code sessions.**
 
 Approve permissions, watch your agents work, drop a file, chat with Claude — all without leaving what you're doing.
 
@@ -149,6 +149,21 @@ Inspired by the notch-companion concepts shared by design studios — this proje
 
 - **Code:** [MIT](LICENSE) — use it, fork it, learn from it, just keep the copyright notice.
 - **Name, Mochi character, icon, sounds and media:** © Louis Raillé, all rights reserved — see [LICENSE-ASSETS.md](LICENSE-ASSETS.md). Shipping your own fork? Give it your own name and character.
+
+## Linux (this fork)
+
+This fork is maintained **Linux-first** (native Rust/Tauri port, Linux Mint 22.3, X11 + Wayland)
+and adds three agent adapters on top of Claude Code: **OpenCode**, **Hermes** and
+**Freebuff/Codebuff** — all observe-only, all loopback, and Claude Code approval stays untouched.
+
+- Linux install, build and verification: [`docs/LINUX.md`](docs/LINUX.md)
+- Multi-agent port spec (audited 2026-10-01): [`docs/SPEC-linux-mult-agent.md`](docs/SPEC-linux-mult-agent.md)
+- Keeping in sync with upstream, with near-zero conflicts: [`docs/LINUX.md § Sinkronisasi upstream`](docs/LINUX.md)
+  — in short: `./scripts/sync_upstream.sh --check` writes a `SYNC-TODO.md` you (or your AI agent)
+  read before editing, then `--merge` merges `Louis-CFM/coucou` with auto-stash when needed.
+
+The macOS and Windows sources stay in the tree untouched — they are passengers on Linux, and
+leaving them intact is what keeps upstream merges nearly conflict-free.
 
 <div align="center">
 
