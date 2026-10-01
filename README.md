@@ -33,7 +33,7 @@ Meet **Mochi**: a soft little squircle with big eyes that pops out of the top ed
 
 - 🤖 **Claude Code, live** — see every session at the top of your screen: what it reads, edits and runs, step by step. Finished? Mochi does a happy little jump.
 - ✅ **Approve from the island** — Claude Code permission requests show up with **Allow / Deny**. One click, back to work.
-- 💬 **Ask Claude anything** — built-in chat, straight from the island.
+- 💬 **Ask Claude anything** — built-in chat, straight from the island. Pick a model in Settings, or point **API base** at any Messages-compatible relay for a custom model.
 - 📎 **Drop a file on the island** — Mochi turns into a box and swallows it, then you can ask a question about it.
 - 🔌 **Integrations** — Stripe payments, n8n workflows, GitHub, Vercel deployments, Resend emails, Notion, Cal.com. Each one gets its own little colored Mochi.
 - 🎭 **A real character** — idle breathing, blinks, eyes that follow your mouse, emotes, 28 handcrafted sounds, a greeting on launch.
@@ -81,6 +81,9 @@ Click the Coucou icon in the system tray → **Settings…**
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
 | **Anthropic API key / API base** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet). Point **API base** at any Messages-compatible relay (LiteLLM, a gateway, a Chinese model relay) to run custom models — with a relay the key is optional |
 | Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Secret Service, all optional |
+
+Any other agent can get its own pill: tag a hook payload with `coucou_agent`
+(e.g. `coucou-hook --agent my-tool`) — see [`docs/AGENTS.md`](docs/AGENTS.md).
 
 If Coucou isn't running, the hook exits immediately: **Claude Code is never blocked.**
 

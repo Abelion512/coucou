@@ -63,6 +63,13 @@ function btn(
 }
 
 /** AgentWho — coloured dot + task name + grey label. */
+/** Chip next to an agent's name: n8n, a third-party agent pill, or Claude Code. */
+function sourceLabel(source: AgentTask["source"] | undefined): string {
+  if (source === "n8n") return "n8n";
+  if (source === "agent") return "Agent";
+  return "Claude Code";
+}
+
 function agentWho(task: AgentTask | null, label: string): HTMLElement {
   const row = h("div", { class: "who-row" });
   if (task) {
@@ -194,7 +201,7 @@ function buildOverview(actions: ViewActions): ViewHost {
         who.append(
           dot(task.color, 7),
           h("span", { class: "name", text: task.name }),
-          h("span", { class: "tool", text: task.source === "claudeCode" ? "Claude Code" : "n8n" }),
+          h("span", { class: "tool", text: sourceLabel(task.source) }),
         );
         if (task.steps.length > 1) {
           who.append(h("span", {
@@ -359,7 +366,7 @@ function buildError(actions: ViewActions): ViewHost {
     sync() {
       const task = State.focusTask;
       clear(who);
-      who.append(agentWho(task, task?.source === "n8n" ? "n8n" : "Claude Code"));
+      who.append(agentWho(task, sourceLabel(task?.source)));
       title.textContent = task?.source === "n8n" ? "Workflow stopped." : "Session stopped on an error.";
       detail.textContent = task?.steps.at(-1) ?? "No detail available.";
     },

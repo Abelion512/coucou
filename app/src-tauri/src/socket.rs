@@ -177,8 +177,16 @@ async fn handle(app: AppHandle, stream: UnixStream) {
         .unwrap_or_default()
         .to_string();
 
-    if event != "PermissionRequest" {
-        log::line(format!("hook {event}"));
+    // Guardrail: approval cards are Claude-Code-only. A payload tagged with a
+    // third-party `coucou_agent` is observe-only, so it is forwarded like any
+    // other event and never opens a pending decision — the relay writes nothing
+    // back and the agent re-asks in its own terminal.
+    if event != "PermissionRequest" || is_external(&payload) {
+        if is_external(&payload) {
+            log::line(format!("hook {event} (external agent, no approval)"));
+        } else {
+            log::line(format!("hook {event}"));
+        }
         let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
         return;
     }
@@ -203,6 +211,16 @@ async fn handle(app: AppHandle, stream: UnixStream) {
         let _ = stream.flush().await;
     }
     let _ = stream.shutdown().await;
+}
+
+/// A payload from a third-party agent: `coucou_agent` set to anything but the
+/// reserved `claude`. The relay forwards the tag as given; the island validates
+/// the name itself and drops it into the Claude Code pill when it is malformed.
+fn is_external(payload: &Value) -> bool {
+    payload
+        .get("coucou_agent")
+        .and_then(Value::as_str)
+        .is_some_and(|agent| !agent.is_empty() && agent != "claude")
 }
 
 /// True when the process on the other end runs as the same user we do
@@ -300,4 +318,18 @@ pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
     };
     log::line(format!("decision id={request_id} {word}"));
     send(app, request_id, Reply::Decision(word.to_string()), false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn only_claude_code_payloads_may_carry_an_approval() {
+        assert!(!is_external(&json!({})));
+        assert!(!is_external(&json!({ "coucou_agent": "" })));
+        assert!(!is_external(&json!({ "coucou_agent": "claude" })));
+        assert!(is_external(&json!({ "coucou_agent": "my-tool" })));
+    }
 }

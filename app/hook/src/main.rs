@@ -1,25 +1,27 @@
 //! coucou-hook — the relay Claude Code runs on every hook event.
 //!
 //! Reads the hook JSON on stdin, adds a little terminal context, and hands it to
-//! Coucou over the named pipe `\\.\pipe\coucou-<sid>`.
+//! Coucou over the per-user Unix socket `$XDG_RUNTIME_DIR/coucou/coucou.sock`.
 //!
 //! Hard rule (docs/CLAUDE.md): **never block Claude Code.**
-//! * If the pipe does not exist — Coucou is closed — we exit 0 immediately with
+//! * If the socket does not exist — Coucou is closed — we exit 0 immediately with
 //!   nothing on stdout, and the session carries on untouched.
-//! * Every step runs under a deadline enforced by the main thread, so a pipe that
+//! * Every step runs under a deadline enforced by the main thread, so a server that
 //!   accepts the connection and then stops reading cannot wedge the session
 //!   either: we abandon the worker and exit.
 //! * Only `PermissionRequest` waits for an answer, because approving from the
 //!   island is the whole point. No answer means empty stdout, and Claude Code
 //!   asks in the terminal exactly as if Coucou were not installed.
 //!
-//! Usage: `coucou-hook <EventName>` (the name is also read from the JSON).
+//! Usage: `coucou-hook [--agent <name>] <EventName>` (the name is also read from
+//! the JSON). `--agent` routes the event to a dynamic agent pill instead of the
+//! Claude Code one — see docs/AGENTS.md.
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-/// Budget for getting a pipe connection. Beyond this Claude Code wins, always.
+/// Budget for connecting to the socket. Beyond this Claude Code wins, always.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 /// Whole-run budget for an event nobody waits on: connect and write, no more.
 const FIRE_AND_FORGET_BUDGET: Duration = Duration::from_secs(2);
@@ -44,30 +46,7 @@ fn relay_path() -> String {
     unix::socket_path()
 }
 
-/// Opens the pipe. Retries only while the server is busy: any other error means
-/// there is nothing to talk to, and waiting would only delay Claude Code.
-#[cfg(windows)]
-fn connect() -> Option<std::fs::File> {
-    use std::os::windows::io::AsRawHandle;
-    let path = relay_path();
-    let deadline = Instant::now() + CONNECT_TIMEOUT;
-    loop {
-        match std::fs::OpenOptions::new().read(true).write(true).open(&path) {
-            Ok(file) => {
-                let handle = windows::Win32::Foundation::HANDLE(file.as_raw_handle());
-                // Somebody else's server on our pipe name gets nothing from us.
-                return win::pipe_server_is_same_user(handle).then_some(file);
-            }
-            Err(err) => {
-                if err.raw_os_error() != Some(ERROR_PIPE_BUSY) || Instant::now() >= deadline {
-                    return None;
-                }
-                std::thread::sleep(Duration::from_millis(15));
-            }
-        }
-    }
-}
-
+/// The documented PermissionRequest output lives in `decision.rs`.
 use decision::decision_json;
 
 fn main() {
@@ -77,7 +56,7 @@ fn main() {
     let budget = if waits_for_answer { DECISION_BUDGET } else { FIRE_AND_FORGET_BUDGET };
 
     // The worker owns every blocking call. If it overruns the budget we simply
-    // stop listening and exit: the process dying takes the pipe handle with it.
+    // stop listening and exit: the process dying closes the socket with it.
     // (No catch_unwind here — the release profile is panic = "abort", so it would
     // be dead code. `talk` is written to have nothing to panic on instead.)
     let (tx, rx) = mpsc::channel::<Option<String>>();
@@ -95,8 +74,6 @@ fn main() {
     // Nothing printed: Claude Code asks in the terminal, as if we were not here.
     std::process::exit(0);
 }
-
-/// The documented PermissionRequest output lives in `decision.rs`.
 
 /// Connects to the relay socket. A missing socket IS the "Coucou is closed"
 /// signal (ENOENT leaves immediately instead of spending the budget), and the
@@ -136,9 +113,26 @@ fn read_event() -> Option<(String, String)> {
     let mut payload = serde_json::from_slice::<serde_json::Value>(&raw).ok()?;
     let map = payload.as_object_mut()?;
 
-    // The event name is passed as argv[1] by the hook command; the JSON usually
-    // carries it too. Trust argv when the JSON is missing it.
-    let arg_event = std::env::args().nth(1).unwrap_or_default();
+    // Parse argv: "coucou-hook [--agent <name>] [<EventName>]"
+    // --agent tags the payload with coucou_agent so the app routes to the right pill.
+    // Absent or invalid names are validated and discarded by the app, not here.
+    let mut agent = String::new();
+    let mut arg_event = String::new();
+    {
+        let mut it = std::env::args().skip(1);
+        while let Some(arg) = it.next() {
+            if arg == "--agent" {
+                agent = it.next().unwrap_or_default();
+            } else if arg_event.is_empty() {
+                arg_event = arg;
+            }
+        }
+    }
+    // Which agent this hook was installed for. Absent means Claude Code,
+    // so existing hook commands keep working unchanged.
+    if !agent.is_empty() {
+        map.insert("coucou_agent".into(), serde_json::Value::String(agent));
+    }
     let event = map
         .get("hook_event_name")
         .and_then(|v| v.as_str())
@@ -209,12 +203,12 @@ fn truncate_strings(value: &mut serde_json::Value) {
 
 /// Connect, send, and — for a permission request — wait for the island's word.
 fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
-    let mut pipe = connect()?;
+    let mut stream = connect()?;
 
-    if pipe.write_all(payload.as_bytes()).is_err() {
+    if stream.write_all(payload.as_bytes()).is_err() {
         return None;
     }
-    let _ = pipe.flush();
+    let _ = stream.flush();
 
     if !waits_for_answer {
         return None;
@@ -223,7 +217,7 @@ fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 1024];
     loop {
-        match pipe.read(&mut chunk) {
+        match stream.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
                 buf.extend_from_slice(&chunk[..n]);
