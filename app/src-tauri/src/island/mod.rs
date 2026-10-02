@@ -30,6 +30,10 @@ pub const WINDOW_LABEL: &str = "island";
 /// Wider than the macOS 6 pt because a click must never be swallowed.
 const HIT_MARGIN: f64 = 14.0;
 
+/// How many cursor polls may fail in a row before the loop stops pretending it has
+/// a pointer to follow. Roughly a quarter second at 60 Hz.
+const BLIND_TICKS: u32 = 15;
+
 #[derive(Serialize, Clone)]
 pub struct CursorPayload {
     pub x: f64,
@@ -243,7 +247,15 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let x = mp.x + (ms.width as i32 - pw as i32) / 2;
 
     let _ = win.set_position(PhysicalPosition::new(x, mp.y));
+    // GTK never sizes a non-resizable window below its natural size (200 px
+    // here), so the 6 px wake strip would stay a 200 px block that eats clicks
+    // meant for whatever is under the top of the screen. tao re-applies the
+    // config's `resizable: false` after the first configure, so this is asked
+    // every time, just before the resize. Undecorated, the window still offers
+    // the user nothing to resize it by. (Found by @YossiYad, #44, upstream.)
+    let _ = win.set_resizable(true);
     let _ = win.set_size(PhysicalSize::new(pw, ph));
+
     // Moving across displays can rescale the window: re-assert the physical size.
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     *LAST_PHYSICAL_W.lock().unwrap() = pw;
@@ -269,19 +281,26 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
         // Remembered across wakes so a display change while hidden is noticed the
         // moment the island comes back.
         let mut last_screen: Option<(i32, i32, u32, u32, u64)> = None;
+        // Consecutive polls that could not read a cursor. Wayland has no global
+        // pointer position, so on it this loop only watches the display layout —
+        // and waking 60×/s to discover that every time costs CPU for nothing.
+        // Upstream solves this with a compile-time flag; measuring it costs
+        // nothing and also covers X11 sessions where the query simply fails.
+        let mut blind = 0u32;
         loop {
             gate.wait_until_active();
             let mut last = (f64::MIN, f64::MIN);
             let mut ticks: u32 = 0;
             while gate.is_active() {
-                std::thread::sleep(Duration::from_millis(16));
+                let (period, screen_every) = if blind > BLIND_TICKS { (500, 1) } else { (16, 30) };
+                std::thread::sleep(Duration::from_millis(period));
 
                 // Monitors get plugged in, unplugged, rearranged and rescaled, and
                 // an island pinned to coordinates that no longer exist is an island
                 // nobody can reach. Checked about twice a second — the cursor poll
                 // is already running, so this costs one monitor query.
                 ticks = ticks.wrapping_add(1);
-                if ticks.is_multiple_of(30) {
+                if ticks.is_multiple_of(screen_every) {
                     let now = current_screen_key(&app);
                     if now.is_some() && now != last_screen {
                         let first = last_screen.is_none();
@@ -297,7 +316,14 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 // The position and scale we applied, not GTK's opinion of them —
                 // see PLACED for why the reported ones cannot be trusted here.
                 let (ox, oy, scale) = *PLACED.lock().unwrap();
-                let Some((cx, cy)) = cursor_physical() else { continue };
+                let Some((cx, cy)) = cursor_physical() else {
+                    blind = blind.saturating_add(1);
+                    continue;
+                };
+                if blind > 0 {
+                    blind -= 1;
+                    crate::log::line("cursor readable again — poll back to 60 Hz");
+                }
                 let x = (cx - ox as f64) / scale;
                 let y = (cy - oy as f64) / scale;
                 let size = match win.inner_size() {
