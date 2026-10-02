@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Upstream merged (9 commits). Upstream now ports Linux inside its own `windows/`
+  tree — a Unix-socket relay, a `platform/` module with a gtk-layer-shell layer and
+  its own `linux.yml` — so the merge paired those files with our `app/` paths by
+  content. We took the deletion for `NotchBuddy/**` and `windows/**` and ours for
+  every `app/**` file. Taken from them: CI now builds and tests pull requests
+  touching `app/**` (their #89 fix), and installs the GStreamer plugins without
+  which an AppImage has no audio. Worth mirroring later, with the Rust side: on
+  Wayland the island should take the cursor from page events instead of the poll
+- `cargo clippy --all-targets` is clean (12 warnings fixed, mostly `to_string()` on
+  `&str`, two hand-built C strings, one range loop). Documented as a per-language
+  gate, with `cargo fmt` explicitly *not* enforced: the compact style would gain
+  nothing from ~100 reformatted lines
+- `AGENTS.md`/`CLAUDE.md` now say how to commit: batch by intent, a commit is worth
+  making for a fix, a deletion or a finished change — never for a typo, and land it
+  yourself instead of asking the user to pull
+- `docs/LINUX.md` documents how to test the three agents end to end on a laptop
+  (what each needs running) and what is deliberately still pending
+
 - Frame loop no longer writes DOM styles it already wrote: `applyGeometry()` and
   `updateBotTargets()` memoise their last values, and the drop-canvas class toggles
   only flip on a change. On WebKitGTK every style write invalidates style and layout,

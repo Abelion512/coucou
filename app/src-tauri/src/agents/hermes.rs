@@ -41,14 +41,14 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                 Some(reply) => {
                     if !was_up {
                         was_up = true;
-                        log::line("hermes: gateway online".to_string());
+                        log::line("hermes: gateway online");
                     }
                     report(app.clone(), &tx, reply).await;
                 }
                 None => {
                     if was_up {
                         was_up = false;
-                        log::line("hermes: gateway offline".to_string());
+                        log::line("hermes: gateway offline");
                     }
                     let _ = tx
                         .send(AgentEvent::State { agent: Agent::Hermes, state: AgentState::Unavailable })
@@ -68,7 +68,7 @@ async fn query_status() -> Option<serde_json::Value> {
         .ok()?;
     let request = serde_json::json!({ "verb": "status" });
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let _ = tokio::time::timeout(
+    tokio::time::timeout(
         TIMEOUT,
         stream.write_all(format!("{}\n", request).as_bytes()),
     )

@@ -133,3 +133,32 @@ CPU harus ~0.
   stub SSE akan mengubahnya jadi PASS.
 - **Dedupe state adapter**: Hermes mengirim `Unavailable` tiap poll 5 detik selama
   offline; island harus mengabaikannya kalau state tidak berubah.
+- **Cursor di Wayland**: upstream sekarang menangani ini (portalingan Wayland-nya
+  ada di `windows/src-tauri/src/platform/linux.rs` mereka, yang tidak kita ambil).
+  Intinya: Wayland tidak memberi posisi kursor global, jadi Mochi harus mengambilnya
+  dari event mouse halaman saja, bukan dari poll. Butuh sisi Rust-nya juga
+  (`boot.cursorPoll`) — bukan perubahan front-end saja.
+- **Paket CI**: `.rpm` + release `linux-latest` + upload artifact manual (upstream
+  punya, kita belum; skip sampai ada yang butuh).
+
+## Tes e2e di laptop (3 agent)
+
+Adapternya observe-only dan tidak butuh hook, tapi harus ada jasadnya:
+
+```bash
+# OpenCode — port dari OPENCODE_PORT, default 54321
+opencode serve --port 54321
+
+# Hermes
+hermes gateway run        # socket di ~/.hermes/gateway.sock
+
+# Freebuff/Codebuff — cukup jalankan CLI-nya sekali
+freebuff                  # menulis ~/.config/manicode/freebuff-live-<pid>.json
+```
+
+Lalu jalankan `./scripts/verify_coucou_linux.sh --no-build`: §4/5/6 berubah dari SKIP
+ke PASS begitu tiga hal di atas hidup. Event-nya masuk lewat `agents::emit("agent")`;
+tanpa `app/src/island/agents.ts` pills-nya belum tampil — itu memang dikerjakan
+manual, lihat [`SPEC-agent-pills.md`](SPEC-agent-pills.md). Log adapter ada di
+`$XDG_DATA_HOME/coucou/coucou.log` (`hermes: gateway offline`, `opencode: …`), jadi
+"tidak jalan" vs "jalan tapi tidak ada UI" bisa dibedakan dari situ.

@@ -83,10 +83,10 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                 Ok(resp) if resp.status().is_success() => {
                     RUNNING.store(true, Ordering::Relaxed);
                     backoff = Duration::from_secs(1);
-                    log::line("opencode: connected".to_string());
+                    log::line("opencode: connected");
                     stream_events(&app, &http, &tx, &mut last_activity, &mut session_poll).await;
                     RUNNING.store(false, Ordering::Relaxed);
-                    log::line("opencode: stream ended — reconnecting".to_string());
+                    log::line("opencode: stream ended — reconnecting");
                 }
                 _ => {
                     RUNNING.store(false, Ordering::Relaxed);

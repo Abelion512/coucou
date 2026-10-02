@@ -38,7 +38,7 @@ fn timestamp() -> String {
         libc::strftime(
             buf.as_mut_ptr().cast(),
             buf.len(),
-            b"%Y-%m-%d %H:%M:%S\0".as_ptr().cast(),
+            c"%Y-%m-%d %H:%M:%S".as_ptr(),
             &tm,
         )
     };

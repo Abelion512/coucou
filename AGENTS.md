@@ -30,12 +30,34 @@ tree, and reintroducing `cfg(windows)` branches is a mistake, not portability.
 
 ```bash
 cd app && bun install && cargo build --release -p coucou-hook && bun run tauri build
-cargo test -p coucou --lib && cargo test -p coucou-hook    # 12 tests, all must pass
+cargo test -p coucou --lib && cargo test -p coucou-hook    # 15 tests, all must pass
+cargo clippy --all-targets                                # 0 warnings is the bar
 ./scripts/verify_coucou_linux.sh --no-build
 ```
 
-Before finishing any change: `bun run build` (runs `tsc --noEmit`) and both
-`cargo test` suites. Zero warnings is the bar.
+Before finishing any change: `bun run build` (runs `tsc --noEmit`), both
+`cargo test` suites, and `cargo clippy --all-targets`. Zero warnings is the bar.
+
+**Per-language gates.** Rust: `cargo clippy` (clean) and `cargo test`. TypeScript:
+`tsc --noEmit` under `strict` + `noUnusedLocals` (via `bun run build`). `cargo fmt` is
+**not** enforced: the tree is written in a deliberately compact style (one-line
+let-else, dense asserts) and `cargo fmt` would rewrite ~100 lines across 16 files for
+no functional gain. Do not "fix the formatting" — that is churn, not debt.
+
+## Committing
+
+Batch by intent, not by keystroke. One commit for one idea; a typo, a renamed local,
+or a two-line tweak riding along with real work goes in the same commit, not its own.
+10 000 commits of typos is a history nobody can bisect.
+
+- A commit is worth making when it is a **fix, a deletion, or a finished change**.
+  A commit that only renames or rewraps code is not.
+- Do not commit to look busy, and do not ask the user to pull work that is ready to
+  land — commit and push it yourself.
+- Land the whole idea in one commit even if it took several passes; a half-finished
+  commit is worse than a slightly larger one.
+- Keep the tree clean between tasks: if `git status` is dirty at the start of a new
+  request, that is a leftover to finish first, not a base to build on.
 
 ## Non-negotiable rules
 

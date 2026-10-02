@@ -204,7 +204,7 @@ fn stamp() -> String {
             libc::strftime(
                 buf.as_mut_ptr().cast(),
                 buf.len(),
-                b"%Y%m%d-%H%M%S\0".as_ptr().cast(),
+                c"%Y%m%d-%H%M%S".as_ptr(),
                 &tm,
             )
         };
@@ -434,8 +434,8 @@ fn unified_diff(before: &str, after: &str) -> String {
     for idx in changed {
         let lo = idx.saturating_sub(3);
         let hi = (idx + 4).min(out.len());
-        for k in lo..hi {
-            keep[k] = true;
+        for slot in &mut keep[lo..hi] {
+            *slot = true;
         }
     }
     let mut result = String::new();

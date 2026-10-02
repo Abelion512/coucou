@@ -24,8 +24,20 @@ tree — see the sync rules below for how that trade-off is managed.
 ## Build (Linux)
 ```
 cd app && bun install && cargo build --release -p coucou-hook && bun run tauri build
+cd app && cargo test -p coucou --lib && cargo test -p coucou-hook   # 15 tests
+cd app && cargo clippy --all-targets                                # 0 warnings
 ./scripts/verify_coucou_linux.sh          # spec §6 checks, PASS/FAIL/SKIP
 ```
+
+`cargo fmt` is not enforced on purpose: the tree uses a compact style (one-line
+let-else, dense asserts) and rustfmt would rewrite ~100 lines in 16 files for no
+functional gain. Fixing formatting is churn, not debt.
+
+## Committing
+Batch by intent, not by keystroke. A commit is worth making when it is a fix, a
+deletion, or a finished change — never for a typo or a rename on its own; that is how
+you get 10 000 commits nobody can bisect. Land a whole idea in one commit even if it
+took several passes, and commit + push it yourself instead of asking the user to pull.
 
 ## Upstream sync (IMPORTANT — read before any multi-file change)
 Upstream (`Louis-CFM/coucou`) moves weekly and this fork must keep merging it cheaply.

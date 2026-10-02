@@ -88,7 +88,7 @@ pub fn start(app: AppHandle) {
 
         if let Some(dir) = sock.parent() {
             if std::fs::create_dir_all(dir).is_err() {
-                log::line("cannot create the relay socket directory".to_string());
+                log::line("cannot create the relay socket directory");
                 return;
             }
             // 0700 — not world-readable, as the macOS port hardened it.
@@ -139,7 +139,7 @@ async fn handle(app: AppHandle, stream: UnixStream) {
     // Refuse to serve another account's relay before reading a byte: trusting a
     // foreign peer could hand it the contents of every tool call.
     if !same_user(&stream) {
-        log::line("relay connection from another uid — refused".to_string());
+        log::line("relay connection from another uid — refused");
         return;
     }
 
