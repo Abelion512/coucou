@@ -37,6 +37,30 @@ bun run tauri build   # menghasilkan .deb + AppImage
 ./scripts/verify_coucou_linux.sh --no-build
 ```
 
+## Releas (versioning)
+
+Nomor versi ada di **empat tempat**: `tauri.conf.json`, `package.json`, `Cargo.toml`,
+dan tag `linux-v*` yang memicu release. `scripts/version.sh` menjaga keempatnya
+konsisten:
+
+```bash
+./scripts/version.sh show                       # keempat sumber + tag terbaru
+./scripts/version.sh check                      # gerbang: semua cocok, tag cocok, changelog ada
+./scripts/version.sh bump patch|minor|major     # tulis ke ketiga file
+./scripts/version.sh bump patch --docs-only     # patch dokumentasi (tetap ditulis)
+./scripts/version.sh classify <base> [ref]      # range ini pantas patch/minor/major?
+```
+
+Semantiknya: **patch** untuk bugfix, dependency, dan docs; **minor** untuk fitur
+yang bisa dirasakan; **major** hanya untuk perubahan yang merusak setup yang
+lama. Perubahan docs saja tetap patch — orang yang tidak pernah membuka Settings
+lagi tidak perlu diberi alasan untuk reinstall.
+
+`check` sudah jadi bagian dari `verify_coucou_linux.sh` dan CI, jadi rilis dengan
+versi yang salah gagal **sebelum** apa pun dipublikasikan. `classify` membaca
+changelog saja; ia tidak bisa membedakan security fix dari perbaikan typo, dan
+tidak berpura-pura bisa.
+
 ## auto-ponytail — DEBT sweep
 
 ```bash
@@ -60,6 +84,28 @@ HTML, dan check "path docs" **akan** memunculkan path yang memang sengaja dihapu
 (`NotchBuddy/`, `windows/`) — itu bukan temuan, itu bukti bahwa check-nya bekerja.
 
 Report-nya di-gitignore: dia dibuat ulang setiap kali dijalankan.
+
+## ui_drive — menguji yang benar-benar soal WM
+
+```bash
+cd app && bun run dev &            # island di 1420
+TAURI_DEV=1 ./target/debug/coucou & # app-nya
+../scripts/ui_drive.sh              # atau: app harus sudah jalan
+```
+
+Sebagian bug di app ini **tidak bisa dilihat dari DOM**: klik yang jatuh ke
+jendela belakang, island yang tenggelam di balik panel, jendela yang lebih kecil
+daripada layout. Semuanya perilaku window manager. `ui_drive.sh` menggerakkan app
+dengan input X sungguhan dan membaca hanya apa yang bisa dilihat luar: geometri
+jendela, fokus X, dan screenshot.
+
+Yang diperiksa: hover membangunkan island, klik di island sampai dan island
+merespons, klik di margin transparan **tidak** sampai, dan diam 8 detik di atas
+island tidak membuatnya tembus lagi. Yang terakhir punya **kontrol negatif** —
+kalau tesnya tidak bisa membedakan "klik sampai" dari "tidak sampai", itu bukan
+tes.
+
+Butuh `xdotool` dan ImageMagick (`import`).
 
 ## Sinkronisasi upstream (yang penting)
 

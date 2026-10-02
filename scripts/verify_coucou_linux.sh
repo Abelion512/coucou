@@ -340,7 +340,7 @@ else
 fi
 say ""
 
-# ── 10. Wayland / X11 (manual) ────────────────────────────────────────────────
+# ── 10. Wayland / X11 (manual) ───────────────────────────────────────────────
 say "10 · Display session (manual step)"
 case "${XDG_SESSION_TYPE:-unknown}" in
     x11)     say "  (info) X11 session — the island and cursor poll should be fully live."; pass "X11 session detected" ;;
@@ -348,6 +348,30 @@ case "${XDG_SESSION_TYPE:-unknown}" in
     *)       skip "unknown session type — run the app and try the tray" ;;
 esac
 say ""
+
+# ── 11. Release hygiene ───────────────────────────────────────────────────────
+# A release published under the wrong version, or a version that disagrees across
+# the four places it lives, is the kind of thing nobody notices until a bug report
+# says "I'm on 0.1.1" and they are not.
+say "11 · Version"
+if [ -x "$REPO/scripts/version.sh" ]; then
+    if out=$("$REPO/scripts/version.sh" check 2>&1); then
+        printf '%s\n' "$out" | sed 's/^/  /'
+        PASS=$((PASS + $(printf '%s\n' "$out" | grep -c 'PASS')))
+    else
+        printf '%s\n' "$out" | sed 's/^/  /'
+        FAIL=$((FAIL + 1))
+    fi
+else
+    skip "scripts/version.sh missing"
+fi
+say ""
+if [ -x "$REPO/scripts/auto_ponytail.sh" ]; then
+    # Advisory only: a DEBT finding must never fail a build, or the sweep gets
+    # skipped the first time it is inconvenient.
+    "$REPO/scripts/auto_ponytail.sh" --quiet >/dev/null 2>&1 \
+        && say "  (info) auto-ponytail DEBT snapshot written to docs/auto-ponytail.md"
+fi
 
 say "═══ Summary: $PASS passed · $FAIL failed · $SKIP skipped ═══"
 [ "$FAIL" -eq 0 ]
