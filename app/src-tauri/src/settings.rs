@@ -25,6 +25,13 @@ pub struct Settings {
     /// requires the API key.
     #[serde(default)]
     pub api_base: String,
+    /// Model ids typed by hand, newest first.
+    ///
+    /// A relay like 9router lists a thousand-plus models, which is useless in a
+    /// dropdown and slow to render. So the list stays what the user actually uses
+    /// and the relay is only asked whether those still exist.
+    #[serde(default)]
+    pub recent_models: Vec<String>,
 }
 
 fn default_model() -> String {
@@ -49,6 +56,7 @@ impl Default for Settings {
             hooks_installed: false,
             model: default_model(),
             api_base: String::new(),
+            recent_models: Vec::new(),
         }
     }
 }

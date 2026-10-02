@@ -87,8 +87,10 @@ export interface Settings {
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
   model: string;
-  /** Base URL of a Messages-compatible relay; empty = official Anthropic API. */
+  /** Base URL of a Messages-compatible relay. Empty = the official Anthropic API. */
   apiBase: string;
+  /** Model ids typed by hand, newest first. The relay is never asked for its full list. */
+  recentModels: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -105,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hooksInstalled: false,
   model: "claude-opus-5",
   apiBase: "",
+  recentModels: [],
 };
 
 type Listener = () => void;

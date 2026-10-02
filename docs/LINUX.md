@@ -176,19 +176,6 @@ checklist 🔶 seperti biasa.
   tetap nulis ke log, dan tidak terlihat sama sekali.
 - `app/hook/src/unix.rs` — relay `coucou-hook`: ENOENT → exit 0 instan (Claude Code tak pernah diblokir).
 
-### Ukuran jendela island
-
-Panel adalah 720×320 **CSS px**, dan front end menata diri terhadap angka itu. GTK
-tidak bisa dipercaya melaporkan scale factor saat startup — pada display 1.25×
-`Monitor::scale_factor` dan `Window::scale_factor` sama-sama bilang 1.0 — sehingga
-jendela pernah digambar 720 px fisik, WebKit membaginya 1.25, dan island 640 px
-terpotong di kedua sisi.
-
-Jadi webview mengukur dirinya sendiri (`Bridge.reportViewport`) dan memberitahu Rust
-seberapa px CSS yang benar-benar dia dapat; Rust memakai rasio itu untuk memperbesar
-jendelanya. WebKit adalah satu-satunya pihak yang tahu scale factor yang sebenarnya,
-karena dia yang membagi px fisik menjadi px CSS.
-
 ## Performa
 
 Aturan mainnya: **0 % CPU saat island tersembunyi**, dan tidak ada kerja sia-sia saat
@@ -211,7 +198,7 @@ CPU harus ~0.
 
 ### Ukuran jendela island
 
-Panel adalah 720×320 **CSS px**, dan front end menata diri terhadap angka itu. Dua
+Panel adalah 720×320 **CSS px**, dan front end menata diri terhadap angka itu. Tiga
 hal harus benar supaya tidak terpotong:
 
 - **Jendela mengikuti area kerja, bukan layar penuh.** Cinnamon menaruh jam dan
@@ -227,6 +214,48 @@ hal harus benar supaya tidak terpotong:
   dihitung sebagai **px fisik ÷ px CSS** — bukan "yang diminta ÷ yang diukur",
   karena koreksi itu membuat laporan kedua membaca keluarannya sendiri dan
   mengembalikan faktor ke 1.0.
+- **Jendela boleh resizable.** GTK tidak pernah mengecilkan jendela non-resizable di
+  bawah ukuran naturalnya (200 px di sini), jadi wake strip 6 px tertinggal jadi blok
+  200 px — pita 200 px di atas layar yang memakan klik milik apa pun yang ada di
+  bawahnya. `apply_geometry`asked `set_resizable(true)` tepat sebelum tiap resize
+  (diambil dari upstream #44).
+
+### Chat: relay, bukan daftar model
+
+Chat adalah panggilan **Messages API** biasa. Tidak ada hubungannya dengan session
+Claude Code — monitoring session lewat hook relay, chat lewat HTTP, dua hal terpisah.
+
+`api_base` + model bebas adalah satu-satunya seam yang perlu: arahkan ke relay
+Messages-compatible apa pun (9router di `http://localhost:20128/v1`, LiteLLM, gateway
+sendiri) dan kode yang ada tetap jalan tanpa perubahan.
+
+Dropdown-nya sengaja kecil: default Claude plus id yang pernah diketik di mesin ini
+(terbaru dulu, 12-deep). Alasannya relay bisa menyediakan **1013 model** — 9router memang
+begitu — dan 1013 baris di `<select>` tidak bisa dibaca maupun di-render cepat. Yang
+dikirim ke relay bukan daftar itu, tapi **id milik kita sendiri**; yang kembali adalah
+mana yang masih ada, jadi tetap sinkron tanpa pernah memuat semuanya. Model yang hilang
+ditandai, tidak dihapus diam-diam: typo di config lebih mungkin daripada penghapusan
+yang disengaja.
+
+Pemeriksaan itu hanya aktif setelah Settings pernah dibuka, karena jendela settings
+dibuat tersembunyi saat start lalu tidak pernah dihancurkan — timer yang jalan sejak
+launch persis melanggar aturan 0 % CPU.
+
+### Yang diambil dari upstream, dan yang diperbaiki
+
+Merge upstream membawa empat fix Linux yang nyata:
+
+- Jendela non-resizable tidak pernah dikecilkan GTK di bawah ukuran naturalnya (di atas).
+- **View yang tidak `on` transparan tapi tidak hilang**, jadi animasi tak berujung di
+  dalamnya membuat webview repaint selama app hidup. `.view:not(.on) *` ikut di-pause,
+  berdampingan dengan `#content.away`.
+- **Island dibuat unfocusable**, jadi GTK menolak fokus walau chat memintanya.
+- **Backoff cursor poll**: upstream memakai flag compile-time. Tree ini mengukurnya —
+  setelah ~15 pembacaan gagal poll turun ke 500 ms dan pulih sendiri — yang juga
+  menutup kasus X11 yang query-nya sekadar gagal, tanpa biaya tambahan.
+
+Tidak diambil: `refresh_click_through` (fallback untuk build tanpa cursor poll; poll
+milik kita jalan di X11) dan daftar fitur macOS.
 
 ### Membuka island
 

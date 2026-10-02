@@ -369,11 +369,85 @@ pub fn show_settings_window(app: &AppHandle) {
     let _ = win.unminimize();
     let _ = win.show();
     let _ = win.set_focus();
+    // The window is never destroyed, so this is the only honest moment for the
+    // front end to re-check something that can change while it is closed: which of
+    // the model ids this machine uses are still on the relay.
+    let _ = app.emit_to("settings", "settings-opened", ());
 }
 
 #[tauri::command]
 fn open_settings_window(app: AppHandle) {
     show_settings_window(&app);
+}
+
+/// What the relay currently offers, judged only against the ids we already know.
+///
+/// A relay can list a thousand models — 9router lists 1013 — which is neither
+/// renderable in a dropdown nor useful to read. So nothing is downloaded into the
+/// UI: the cached ids go out, and what comes back is which of them are still
+/// there, plus a count so the user can see how big the catalogue is. A model the
+/// relay dropped is marked, never silently removed.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelCheck {
+    reachable: bool,
+    total: usize,
+    present: Vec<String>,
+    missing: Vec<String>,
+}
+
+#[tauri::command]
+async fn chat_models_check(shared: State<'_, Shared>, known: Vec<String>) -> Result<ModelCheck, ()> {
+    let api_base = shared.settings.lock().unwrap().api_base.trim().to_string();
+    if api_base.is_empty() {
+        return Ok(ModelCheck { reachable: false, total: 0, present: known, missing: Vec::new() });
+    }
+    // A relay that needs a key would answer 401 here; the key is in the Secret
+    // Service and is deliberately not read for a list, so "unreachable" covers it
+    // rather than prompting for a credential that may not be needed.
+    let text = {
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                return Ok(ModelCheck { reachable: false, total: 0, present: Vec::new(), missing: known })
+            }
+        };
+        match client
+            .get(format!("{}/models", api_base.trim_end_matches('/')))
+            .send()
+            .await
+        {
+            Ok(r) => match r.text().await {
+                Ok(t) => t,
+                Err(_) => {
+                    return Ok(ModelCheck {
+                        reachable: false,
+                        total: 0,
+                        present: Vec::new(),
+                        missing: known,
+                    })
+                }
+            },
+            Err(_) => {
+                return Ok(ModelCheck { reachable: false, total: 0, present: Vec::new(), missing: known })
+            }
+        }
+    };
+    let ids: Vec<String> = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("data").and_then(|d| d.as_array()).cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let present: Vec<String> = known.iter().filter(|k| ids.contains(k)).cloned().collect();
+    let missing: Vec<String> = known.iter().filter(|k| !ids.contains(k)).cloned().collect();
+    Ok(ModelCheck { reachable: true, total: ids.len(), present, missing })
 }
 
 /// Points GStreamer at the system's plugins and gives it its own registry file.
@@ -492,6 +566,7 @@ pub fn run() {
             secret_clear,
             refresh_integration,
             agents_status,
+            chat_models_check,
             open_n8n,
             open_settings_window,
             set_paused,

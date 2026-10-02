@@ -66,26 +66,25 @@ cmd_check() {
   valid_semver "$t" || fail "tauri.conf.json version is not semver: '$t'"
   [ "$t" = "$p" ] || fail "package.json says $p but tauri.conf.json says $t"
   [ "$t" = "$c" ] || fail "Cargo.toml says $c but tauri.conf.json says $t"
-  pass "all four sources agree on $t"
+  pass "all three files agree on $t"
 
-  # If HEAD is a release commit, the tag must name exactly this version. A release
-  # published under the wrong tag is the failure this exists to prevent.
-  local head_tag
-  head_tag=$(git tag --points-at HEAD --list 'linux-v*' | head -1)
-  if [ -n "$head_tag" ]; then
-    [ "$head_tag" = "linux-v$t" ] \
-      || fail "HEAD is tagged $head_tag but the version is $t"
-    pass "tag $head_tag matches version $t"
-  fi
-
-  # The CHANGELOG must not still be sitting entirely under "Unreleased" if a tag
-  # exists claiming to ship it.
+  # `linux-v*` is a namespace this fork shares with upstream, who publish their own
+  # Linux beta under it. A tag only counts as ours when the commit it points at is
+  # not reachable from upstream/main — otherwise upstream's release reads as ours and
+  # demands a changelog section for a build it produced.
   local tag
-  tag=$(git tag --list 'linux-v*' --sort=-v:refname | head -1)
-  if [ -n "$tag" ] && ! grep -q "^## $t" "$REPO/CHANGELOG.md"; then
-    fail "a $tag tag exists but CHANGELOG.md has no '## $t' section"
-  fi
-  pass "changelog covers every released version"
+  for tag in $(git tag --list 'linux-v*' --sort=-v:refname); do
+    local sha
+    sha=$(git rev-list -n1 "$tag" 2>/dev/null) || continue
+    git merge-base --is-ancestor "$sha" upstream/main 2>/dev/null && continue
+    local want="linux-v$t"
+    [ "$tag" = "$want" ] \
+      || fail "this fork released $tag but the version is $t"
+    grep -q "^## $t" "$REPO/CHANGELOG.md" \
+      || fail "$tag exists but CHANGELOG.md has no '## $t' section"
+    pass "$tag matches version $t and has a changelog section"
+  done
+  return 0
 }
 
 cmd_bump() { # $1 = part, $2 = --docs-only (optional)

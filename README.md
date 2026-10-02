@@ -79,8 +79,17 @@ Click the Coucou icon in the system tray → **Settings**
 | What | Why | Where the key goes |
 |---|---|---|
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
-| **Anthropic API key / API base** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet). Point **API base** at any Messages-compatible relay (LiteLLM, a gateway, a Chinese model relay) to run custom models — with a relay the key is optional |
+| **Anthropic API key / API base** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet). Point **API base** at any Messages-compatible relay (LiteLLM, 9router, a Chinese model relay) to run any model that relay speaks — with a relay the key is optional |
 | Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Secret Service, all optional. Each card links straight to the page where that key is created |
+
+### Pointing chat at a relay
+
+Set **API base** to a Messages-compatible relay and **Model** to anything it serves.
+The dropdown is deliberately small — the Claude defaults plus the model ids this
+machine has actually used — because a relay like 9router offers **1013 models**, which
+is unreadable as a list. Coucou asks the relay which of *your* ids are still on it and
+tells you: *"Relay lists 1013 models — all 2 of yours are on it"*. A model the relay has
+dropped is marked, never silently removed.
 
 Any other agent can get its own pill: tag a hook payload with `coucou_agent`
 (e.g. `coucou-hook --agent my-tool`) — see [`docs/AGENTS.md`](docs/AGENTS.md).

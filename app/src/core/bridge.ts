@@ -114,6 +114,13 @@ export const Bridge = {
 
   /** The three watched agents' liveness, for the settings window. */
   agentsStatus: () => call<AgentStatus[]>("agents_status"),
+
+  /** Asks a relay which of the model ids we know are still offered. */
+  chatModelsCheck: (known: string[]) =>
+    call<{ reachable: boolean; total: number; present: string[]; missing: string[] }>(
+      "chat_models_check",
+      { known },
+    ),
 };
 
 export interface AgentStatus {

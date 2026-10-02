@@ -1,5 +1,34 @@
 # Changelog
 
+Two streams. **Unreleased** is this fork's Linux work, which has not shipped yet.
+Everything below the rule is upstream's own macOS history, kept so a future
+`sync_upstream.sh` has a merge base — none of it describes a build you can install
+from this repository.
+
+## Unreleased
+
+- **The model list is what you use, not what the relay sells.** A relay like 9router
+  offers 1013 models; rendering them in a dropdown is unreadable and slow. Typed model
+  ids are remembered (newest first, twelve deep) and the dropdown is the Claude
+  defaults plus those. The relay is asked periodically which of *your* ids are still
+  there — "Relay lists 1013 models — all 2 of yours are on it" — and a model it has
+  dropped is marked rather than silently removed, because a typo in a config is more
+  likely than a deliberate deletion. The check arms only after Settings has been
+  opened once: that window is created hidden and never destroyed, so a timer running
+  from launch would be exactly the background work the 0 %-when-hidden rule forbids
+- **Upstream merged** (0.1.1 notarized, the Linux beta announcement). The macOS tree
+  came back with it and the deletions are taken again. Four Linux fixes adopted: GTK
+  never shrinks a non-resizable window below its natural size, so the 6 px wake strip
+  was a 200 px band that swallowed clicks (upstream #44); a view that is not on is
+  transparent but not gone, so its animations kept the webview repainting for as long
+  as the app ran; and the island is created unfocusable, so GTK refused the chat
+  field's focus request. The cursor-poll backoff upstream gates behind a compile-time
+  flag — this tree measures it instead, recovering on its own, which also covers X11
+  sessions where the query merely fails. Not taken: `refresh_click_through` (a
+  no-cursor-poll fallback; ours works on X11) and the macOS feature list
+
+---
+
 ## 0.1.2 — October 2, 2026
 
 - Codex support (GitHub build): sessions show up live on the Codex pill, and permission requests get Allow and Deny in the notch. Install from Settings → Codex Hooks, then trust the hooks once with /hooks in Codex (#130) — thanks @lacatu5

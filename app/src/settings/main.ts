@@ -252,20 +252,54 @@ function apiSection(hasKey: boolean): HTMLElement {
     }
   });
 
-  // Known models in a dropdown, plus "Custom…" for whatever a relay exposes —
-  // the stored model is always shown even when it is not in the list.
+  // Known models in a dropdown, plus "Custom…" for whatever a relay exposes.
+  //
+  // A relay can offer a thousand-plus models (9router lists 1013). Rendering
+  // that is useless to read and slow to open, so the dropdown is only the
+  // defaults plus the ids this machine has actually used, and the relay is asked
+  // periodically which of *those* still exist. Nothing is ever silently removed:
+  // a model the relay dropped is marked, because a typo in a config is more
+  // likely than a deliberate deletion.
   const CUSTOM = "__custom__";
   const model = h("select", {}) as HTMLSelectElement;
-  for (const [id, label] of MODELS) model.append(h("option", { value: id, text: label }));
-  if (!MODELS.some(([id]) => id === settings.model)) {
-    model.append(h("option", { value: settings.model, text: settings.model }));
-  }
-  model.value = settings.model;
-  model.append(h("option", { value: CUSTOM, text: "Custom…" }));
+  const missing = new Set<string>();
+
+  const knownIds = () => {
+    const ids = [...settings.recentModels];
+    if (settings.model && !ids.includes(settings.model)) ids.unshift(settings.model);
+    return ids;
+  };
+
+  const rebuildModelList = () => {
+    const previous = model.value;
+    clear(model);
+    for (const [id, label] of MODELS) {
+      model.append(h("option", { value: id, text: label }));
+    }
+    for (const id of knownIds()) {
+      if (MODELS.some(([m]) => m === id)) continue;
+      const gone = missing.has(id);
+      model.append(h("option", {
+        value: id,
+        // "not on the relay" rather than a strike-through: a select option cannot
+        // be styled reliably, and the label has to mean something when read aloud.
+        text: gone ? `${id}  (not on the relay)` : id,
+      }));
+    }
+    model.append(h("option", { value: CUSTOM, text: "Custom…" }));
+    model.value = [...model.options].some((o) => o.value === previous) ? previous : settings.model;
+  };
+
+  const rememberModel = (id: string) => {
+    settings.recentModels = [id, ...settings.recentModels.filter((m) => m !== id)].slice(0, 12);
+  };
+  const isKnown = (id: string) => MODELS.some(([m]) => m === id) || knownIds().includes(id);
+
+  rebuildModelList();
 
   const customField = h("input", {
     type: "text",
-    placeholder: "model id, e.g. glm-4.7 or deepseek-v4",
+    placeholder: "model id, e.g. hermes-aux or deepseek-v4",
     style: "flex:1 1 auto;min-width:0",
     autocomplete: "off",
     spellcheck: "false",
@@ -275,16 +309,13 @@ function apiSection(hasKey: boolean): HTMLElement {
   const syncCustom = () => {
     const show = model.value === CUSTOM;
     customRow.style.display = show ? "" : "none";
-    if (show && !MODELS.some(([id]) => id === settings.model)) {
-      customField.value = settings.model;
-    }
+    if (show && !isKnown(settings.model)) customField.value = settings.model;
   };
   customField.addEventListener("change", () => {
     const value = customField.value.trim();
     if (!value) return; // an empty model id would silently break every request
-    if (![...model.options].some((o) => o.value === value)) {
-      model.append(h("option", { value, text: value }));
-    }
+    rememberModel(value);
+    rebuildModelList();
     model.value = value;
     settings.model = value;
     void save();
@@ -295,10 +326,48 @@ function apiSection(hasKey: boolean): HTMLElement {
       customField.focus();
       return;
     }
+    if (model.value !== CUSTOM && !isKnown(model.value)) rememberModel(model.value);
     settings.model = model.value;
     void save();
     syncCustom();
   });
+
+  // Ask the relay which of our ids are still there. Armed on the first use and
+  // then slow: the settings window is created hidden and never destroyed, so a
+  // timer started here would outlive every window the user ever opens.
+  let armed = false;
+  const catalogue = h("div", { class: "hint" });
+  const checkModels = async () => {
+    armed = true;
+    const known = knownIds();
+    if (!known.length || !usingRelay()) {
+      catalogue.textContent = usingRelay()
+        ? "Add a model id and it is checked against the relay from then on."
+        : "";
+      return;
+    }
+    const res = await Bridge.chatModelsCheck(known);
+    if (!res) return;
+    if (!res.reachable) {
+      catalogue.textContent = "Relay did not answer — model list not verified.";
+      return;
+    }
+    missing.clear();
+    for (const id of res.missing) missing.add(id);
+    if (res.missing.length) rebuildModelList();
+    catalogue.textContent = res.missing.length
+      ? `Relay lists ${res.total} models. Not on it: ${res.missing.join(", ")}.`
+      : `Relay lists ${res.total} models — all ${known.length} of yours are on it.`;
+  };
+  // The window is hidden most of the time; a timer that outlives every visible
+  // second of the app is the kind of thing the 0 %-when-hidden rule is about, so
+  // it is armed only once the window has been opened, and it never fires while
+  // `armed` is false.
+  window.setInterval(() => {
+    if (armed) void checkModels();
+  }, 5 * 60_000);
+  void onEvent("settings-opened", () => void checkModels());
+  void checkModels();
 
   clearBtn.style.display = hasKey ? "" : "none";
   void refresh();
@@ -316,6 +385,7 @@ function apiSection(hasKey: boolean): HTMLElement {
     h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
     h("div", { class: "row" }, h("label", { text: "Model" }), model),
     customRow,
+    catalogue,
     feedback,
   );
 }
