@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Clicks fell through to the window behind, and pausing made it worse.** The
+  click-through test asked GTK where the window is: `Window::outer_position` answered
+  y=11 for a window sitting at y=45 — off by the Cinnamon panel — and
+  `Window::scale_factor` answered 1.0 on a 1.25× display, so cursor coordinates came
+  out 1.25× too large. The hit test therefore disagreed with the island by tens of
+  pixels, `on_island` was false even with the mouse on it, and the island never took
+  the click. It now uses the position and scale **it applied itself** — the window is
+  not user-movable, so that is the position it has. Both of these are the same
+  unreliability that clipped the window in the first place, which is why it is now
+  written down once instead of being rediscovered per call site
+- `scripts/ui_drive.sh` — drives the running island with real X input and proves
+  what happened: hover wakes it, a click on it lands and makes it redraw, a click in
+  its transparent margin does not, and idling on it for 8 s does not break it. The
+  margin check is a deliberate control: a checker that cannot tell "clicked" from
+  "not clicked" is not a checker. It reads nothing from the app's internals — window
+  geometry, X focus and screenshots — because the bug it guards is in window-manager
+  behaviour, which a DOM assertion cannot see
 - **The island was drawing underneath the desktop panel.** It was placed at the
   monitor's `y`, which on Cinnamon is exactly where a notch would be — the top edge,
   where the clock and notification centre live. The island was invisible, and the

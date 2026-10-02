@@ -175,6 +175,18 @@ static VIEWPORT: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 /// webview reports, this gives the scale factor without assuming what was requested.
 static LAST_PHYSICAL_W: Mutex<u32> = Mutex::new(0);
 
+/// Where the island window was actually put, in physical screen coordinates, and
+/// the scale it was sized with.
+///
+/// Both of these are *what we asked for*, not what GTK reports back. On this
+/// machine `Window::outer_position` returned y=11 for a window that is at y=45 —
+/// 34 px off, which is roughly the Cinnamon panel — and `Window::scale_factor`
+/// returned 1.0 on a 1.25× display. Feeding either one into the cursor maths made
+/// the hit test disagree with the island by tens of pixels, so the island never
+/// took the mouse and every click fell through to the window behind. The window is
+/// not user-movable, so the position we set is the position it has.
+static PLACED: Mutex<(i32, i32, f64)> = Mutex::new((0, 0, 1.0));
+
 /// Records the CSS size the webview actually got.
 ///
 /// The scale is derived from *physical ÷ CSS*, never from *requested ÷ CSS*: the
@@ -235,6 +247,7 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     // Moving across displays can rescale the window: re-assert the physical size.
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     *LAST_PHYSICAL_W.lock().unwrap() = pw;
+    *PLACED.lock().unwrap() = (x, mp.y, scale);
     let _ = win.set_always_on_top(true);
 }
 
@@ -281,11 +294,12 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 }
 
                 let Some(win) = window(&app) else { continue };
-                let Ok(origin) = win.outer_position() else { continue };
-                let scale = win.scale_factor().unwrap_or(1.0);
+                // The position and scale we applied, not GTK's opinion of them —
+                // see PLACED for why the reported ones cannot be trusted here.
+                let (ox, oy, scale) = *PLACED.lock().unwrap();
                 let Some((cx, cy)) = cursor_physical() else { continue };
-                let x = (cx - origin.x as f64) / scale;
-                let y = (cy - origin.y as f64) / scale;
+                let x = (cx - ox as f64) / scale;
+                let y = (cy - oy as f64) / scale;
                 let size = match win.inner_size() {
                     Ok(s) => (s.width as f64 / scale, s.height as f64 / scale),
                     Err(_) => (PANEL_W, PANEL_H),
