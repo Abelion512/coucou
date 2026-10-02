@@ -3,6 +3,9 @@
 
 use std::io::Write;
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+
 use crate::settings;
 
 pub fn line(message: impl AsRef<str>) {
@@ -16,14 +19,15 @@ pub fn line(message: impl AsRef<str>) {
     if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
         let _ = std::fs::remove_file(&path);
     }
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        // 0600 — hook events name tools and projects; that is the user's
-        // business, not the rest of the machine's (mirrors the macOS port).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-        }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        // 0600 from the moment it exists. Creating it 0644 and chmod-ing after
+        // `open` left a window where hook events — tool names, project paths —
+        // were world-readable.
+        .mode(0o600)
+        .open(&path)
+    {
         let _ = writeln!(file, "{stamp} {}", message.as_ref());
     }
 }

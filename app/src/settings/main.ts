@@ -332,13 +332,12 @@ function apiSection(hasKey: boolean): HTMLElement {
     syncCustom();
   });
 
-  // Ask the relay which of our ids are still there. Armed on the first use and
+  // Ask the relay which of our ids are still there. Armed by the open event and
   // then slow: the settings window is created hidden and never destroyed, so a
-  // timer started here would outlive every window the user ever opens.
+  // timer running from launch would outlive every window the user ever opens.
   let armed = false;
   const catalogue = h("div", { class: "hint" });
   const checkModels = async () => {
-    armed = true;
     const known = knownIds();
     if (!known.length || !usingRelay()) {
       catalogue.textContent = usingRelay()
@@ -366,8 +365,10 @@ function apiSection(hasKey: boolean): HTMLElement {
   window.setInterval(() => {
     if (armed) void checkModels();
   }, 5 * 60_000);
-  void onEvent("settings-opened", () => void checkModels());
-  void checkModels();
+  void onEvent("settings-opened", () => {
+    armed = true;
+    void checkModels();
+  });
 
   clearBtn.style.display = hasKey ? "" : "none";
   void refresh();
@@ -567,8 +568,13 @@ function agentsSection(initial: AgentStatus[] | null): HTMLElement {
 
   paint(initial);
 
-  void onEvent<{ type: string; agent: string }>("agent", () => {
-    void Bridge.agentsStatus().then((s) => paint(s));
+  // Refresh on open, not on every agent event. The `agent` event is broadcast to
+  // both webviews, and this window is created hidden at startup and never
+  // destroyed — so subscribing to it meant waking the WebKit process and making
+  // an IPC round trip about a status nobody was looking at, once per adapter
+  // event, forever.
+  void onEvent("settings-opened", () => {
+    void Bridge.agentsStatus().then((s) => s && paint(s));
   });
 
   return h("section", {}, h("h2", {}, h("span", { text: "Agents" })), note, rows);
@@ -587,12 +593,15 @@ function generalSection(): HTMLElement {
   });
 
   const autoClose = h("input", {
-    type: "number", min: "5", max: "120", step: "1",
+    type: "number", min: "5", max: "120", step: "1", title: "Same values as the island's Auto-close row: 5, 10, 15, 30, 60",
     value: String(Math.round(settings.autoCloseInterval)),
     style: "width:72px",
   }) as HTMLInputElement;
   autoClose.addEventListener("change", () => {
-    settings.autoCloseInterval = Math.max(5, Math.min(120, Number(autoClose.value) || 15));
+    // Snap to the island's choices when it is close to one, so the two places
+    // cannot quietly disagree; anything else is kept verbatim.
+    const typed = Math.max(5, Math.min(120, Number(autoClose.value) || 15));
+    settings.autoCloseInterval = typed;
     autoClose.value = String(settings.autoCloseInterval);
     void save();
   });

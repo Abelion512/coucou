@@ -161,6 +161,8 @@ export class BotEngine {
   isMini = false;
   /** Solid body colour for mini bots / integration pills (null = Mochi gradient). */
   bodyColor: RGB | null = null;
+  /** Memoised outline; see `bodyPath`. Null until the first draw. */
+  private pathCache: { rx: number; ry: number; R: number; morph: number; path: Path2D } | null = null;
 
   // Animated state (BotEngine `s`)
   yaw = 0; pitch = 0; roll = 0; tilt = 0; open = 1;
@@ -676,13 +678,39 @@ export class BotEngine {
   }
 
   private bodyPath(rx: number, ry: number, R: number): Path2D {
+    // The outline depends only on these four numbers, and rebuilding it is 73
+    // iterations of cos/sin/pow plus a fresh Path2D that WebKit then re-tessellates
+    // for every fill and clip. With nine engines at 60 Hz that is ~158 000
+    // transcendentals a second, almost all of it recomputing an identical shape.
+    //
+    // A mini bot has a fixed size and morph 0, so its path is built once and
+    // reused; the main bot's radius moves while it springs, so its cache simply
+    // misses until it settles and then hits.
+    const m = this.morph;
+    const cached = this.pathCache;
+    if (
+      cached &&
+      cached.rx === rx &&
+      cached.ry === ry &&
+      cached.R === R &&
+      // Morph is continuous, so an exact compare would never hit; bucket it to
+      // the precision the shape is actually drawn at.
+      Math.abs(cached.morph - m) < 0.01
+    ) {
+      return cached.path;
+    }
+    const path = this.buildBodyPath(rx, ry, R, m);
+    this.pathCache = { rx, ry, R, morph: m, path };
+    return path;
+  }
+
+  private buildBodyPath(rx: number, ry: number, R: number, m: number): Path2D {
     const n = 72;
     const expN = 2.0 / 2.7;
     const tw = R * 1.0;
     const th = R * 0.94;
     const tr = R * 0.42;
     const p = new Path2D();
-    const m = this.morph;
     for (let i = 0; i <= n; i++) {
       const a = (i / n) * Math.PI * 2;
       const ca = Math.cos(a);

@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::Sender;
 
-use super::{emit, Agent, AgentEvent, AgentState};
+use super::{Agent, AgentEvent, AgentState};
 use crate::log;
 
 /// Poll cadence. Five seconds is coarse but the state it produces is coarse too,
@@ -45,7 +45,7 @@ fn config_dir() -> PathBuf {
         .join("manicode")
 }
 
-pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
+pub fn start(_app: tauri::AppHandle, tx: Sender<AgentEvent>) {
     tauri::async_runtime::spawn(async move {
         // Sessions we have already announced, keyed by file name.
         let mut seen: HashMap<String, LiveSession> = HashMap::new();
@@ -161,9 +161,7 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
             }
             last_history_mtime = mtime;
 
-            let state = if any_live || relaunching { AgentState::Working } else { AgentState::Idle };
             LIVE.store(any_live || relaunching, Ordering::Relaxed);
-            emit(&app, &AgentEvent::State { agent: Agent::Freebuff, state });
         }
     });
 }

@@ -104,7 +104,15 @@ where
 }
 
 /// One-shot refresh from the Refresh buttons in the island.
+///
+/// Honours pause and the per-integration switch, like every scheduled poll. It is
+/// reachable from a webview command, and "paused means Coucou makes no network
+/// requests" is a promise the user can see honoured in the tray — a manual path
+/// that skipped the check would quietly break it.
 pub async fn poll_once(app: AppHandle, id: &str) {
+    if PAUSED.load(Ordering::Relaxed) || !enabled(&app, id) {
+        return;
+    }
     match id {
         "integration_stripe" => poll_stripe(app).await,
         "integration_github" => poll_github(app).await,

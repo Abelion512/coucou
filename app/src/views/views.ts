@@ -63,10 +63,24 @@ function btn(
 }
 
 /** AgentWho — coloured dot + task name + grey label. */
-/** Chip next to an agent's name: n8n, a third-party agent pill, or Claude Code.
- *  An agent pill already carries its platform name, so "Agent" would add nothing. */
-function sourceLabel(source: AgentTask["source"] | undefined): string {
-  if (source === "n8n") return "n8n";
+/**
+ * The grey chip beside an agent's name.
+ *
+ * It used to be a hard-coded "Claude Code" for anything that was not an n8n
+ * integration, so every adapter pill — OpenCode, Hermes, Freebuff — was labelled
+ * as though it were Claude Code. A pill already carries its platform name, so the
+ * chip only has to say what kind of thing it is; for the watched agents the
+ * session title is far more useful than a word that names the wrong tool.
+ */
+function sourceLabel(task: AgentTask | null): string {
+  if (!task) return "";
+  if (task.source === "n8n") return "n8n";
+  if (task.source === "agent") {
+    const step = task.steps[task.stepIndex] ?? task.steps[task.steps.length - 1];
+    // The step is the live activity — "gateway · v0.21.5 · 0 active" for Hermes,
+    // the session title for OpenCode. Truncated: this is a chip, not a card.
+    return step ? step.split("·")[0].trim().slice(0, 28) : "agent";
+  }
   return "Claude Code";
 }
 
@@ -204,7 +218,7 @@ function buildOverview(actions: ViewActions): ViewHost {
         who.append(
           dot(task.color, 7),
           h("span", { class: "name", text: task.name }),
-          h("span", { class: "tool", text: sourceLabel(task.source) }),
+          h("span", { class: "tool", text: sourceLabel(task) }),
         );
         if (task.steps.length > 1) {
           who.append(h("span", {
@@ -369,7 +383,7 @@ function buildError(actions: ViewActions): ViewHost {
     sync() {
       const task = State.focusTask;
       clear(who);
-      who.append(agentWho(task, sourceLabel(task?.source)));
+      who.append(agentWho(task, sourceLabel(task)));
       title.textContent = task?.source === "n8n" ? "Workflow stopped." : "Session stopped on an error.";
       detail.textContent = task?.steps.at(-1) ?? "No detail available.";
     },
@@ -430,7 +444,11 @@ function buildSettings(actions: ViewActions): ViewHost {
     oninput: (e: Event) => actions.setVolume(Number((e.target as HTMLInputElement).value)),
   }) as HTMLInputElement;
   const autoLabel = h("span", {});
-  const segButtons = [10, 15, 30].map((s) =>
+  // The same five values Settings offers. It used to start at 10 s, so a user who
+  // set 5 s in the settings window came here to a segmented control with nothing
+  // highlighted and no way to tell whether the value had been lost.
+  const AUTO_CLOSE_CHOICES = [5, 10, 15, 30, 60];
+  const segButtons = AUTO_CLOSE_CHOICES.map((s) =>
     h("button", { onclick: () => actions.setAutoClose(s) }, `${s}s`),
   );
   const claudeBadge = h("span", { class: "status-badge" });
@@ -473,7 +491,7 @@ function buildSettings(actions: ViewActions): ViewHost {
       volume.value = String(s.soundVolume);
       volume.style.opacity = s.soundEnabled ? "1" : "0.4";
       autoLabel.textContent = `Auto-close · ${Math.round(s.autoCloseInterval)}s`;
-      segButtons.forEach((b, i) => b.classList.toggle("on", s.autoCloseInterval === [10, 15, 30][i]));
+      segButtons.forEach((b, i) => b.classList.toggle("on", s.autoCloseInterval === AUTO_CLOSE_CHOICES[i]));
       clear(claudeBadge);
       claudeBadge.append(
         dot(s.hooksInstalled ? "#22C55E" : "#F4505E", 6),

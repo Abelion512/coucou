@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::Sender;
 
-use super::{emit, Agent, AgentEvent, AgentState};
+use super::{Agent, AgentEvent, AgentState};
 use crate::log;
 
 const POLL: Duration = Duration::from_secs(5);
@@ -50,6 +50,13 @@ pub fn api_base() -> Option<String> {
 
 /// The session id last put on the pill, so a poll does not re-announce it.
 static LAST_SESSION: Mutex<String> = Mutex::new(String::new());
+/// The last gateway step and platform complaint sent, so an unchanged poll is
+/// silent instead of filling the pill's ticker.
+static LAST_STEP: Mutex<String> = Mutex::new(String::new());
+static LAST_NOTICE: Mutex<String> = Mutex::new(String::new());
+
+fn last_step() -> Option<String> { LAST_STEP.lock().ok().map(|v| v.clone()) }
+fn last_notice() -> Option<String> { LAST_NOTICE.lock().ok().map(|v| v.clone()) }
 
 /// The most recent real conversation Hermes has, as `(id, label)`.
 ///
@@ -95,7 +102,7 @@ fn socket_path() -> String {
     home.join(".hermes").join("gateway.sock").to_string_lossy().into_owned()
 }
 
-pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
+pub fn start(_app: tauri::AppHandle, tx: Sender<AgentEvent>) {
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(POLL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -111,7 +118,7 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                         log::line("hermes: gateway online");
                     }
                     RUNNING.store(true, Ordering::Relaxed);
-                    report(app.clone(), &tx, reply).await;
+                    report(&tx, reply).await;
                     since_session += POLL;
                     if since_session >= SESSION_POLL {
                         since_session = Duration::ZERO;
@@ -172,7 +179,6 @@ async fn query_status() -> Option<serde_json::Value> {
 
 /// Map the verified `status` payload onto AgentEvents.
 async fn report(
-    app: tauri::AppHandle,
     tx: &Sender<AgentEvent>,
     reply: serde_json::Value,
 ) {
@@ -196,13 +202,21 @@ async fn report(
         AgentState::Idle
     };
 
-    let _ = tx
-        .send(AgentEvent::Step {
-            agent: Agent::Hermes,
-            tool: "gateway".into(),
-            detail: format!("v{version} · {active_agents} active"),
-        })
-        .await;
+    // Only when it changed. The front end appends every Step it receives and
+    // pushes the pill to `working`, so sending this every 5 s made an idle
+    // gateway look permanently busy and scrolled the same line twelve times a
+    // minute.
+    let step = format!("v{version} · {active_agents} active");
+    if last_step().as_deref() != Some(step.as_str()) {
+        *LAST_STEP.lock().unwrap() = step.clone();
+        let _ = tx
+            .send(AgentEvent::Step {
+                agent: Agent::Hermes,
+                tool: "gateway".into(),
+                detail: step,
+            })
+            .await;
+    }
 
     // Platform health: a non-connected api_server is the error the island shows.
     if let Some(platforms) = result.get("platforms").and_then(|p| p.as_object()) {
@@ -222,13 +236,20 @@ async fn report(
         for (name, info) in platforms {
             let pstate = info.get("state").and_then(|s| s.as_str()).unwrap_or("");
             if pstate != "connected" {
-                let _ = tx
-                    .send(AgentEvent::Notification {
-                        agent: Agent::Hermes,
-                        kind: "platform".into(),
-                        message: format!("{name}: {pstate}"),
-                    })
-                    .await;
+                // Same reasoning as the gateway step: an unchanged complaint is
+                // not news, and appending it forever is a ticker that scrolls
+                // itself.
+                let message = format!("{name}: {pstate}");
+                if last_notice().as_deref() != Some(message.as_str()) {
+                    *LAST_NOTICE.lock().unwrap() = message.clone();
+                    let _ = tx
+                        .send(AgentEvent::Notification {
+                            agent: Agent::Hermes,
+                            kind: "platform".into(),
+                            message,
+                        })
+                        .await;
+                }
                 if name == "api_server" && state != AgentState::Error {
                     let _ = tx
                         .send(AgentEvent::State { agent: Agent::Hermes, state: AgentState::Error })
@@ -238,8 +259,10 @@ async fn report(
         }
     }
 
+    // The bus is the only path to the island: it already re-emits everything it
+    // receives as an `agent` event. The adapter also called `emit()` on the same
+    // state directly, so the front end got it twice per poll and had to dedupe.
     let _ = tx.send(AgentEvent::State { agent: Agent::Hermes, state }).await;
-    emit(&app, &AgentEvent::State { agent: Agent::Hermes, state });
 }
 
 /// Liveness: the gateway answered on the last poll, not merely "the file is there".
@@ -249,7 +272,15 @@ pub fn healthy() -> bool {
 
 /// Puts Hermes' own current session on the pill, once per change.
 async fn announce_session(tx: &Sender<AgentEvent>) {
-    let Some((id, label)) = latest_session() else { return };
+    // The sqlite3 read forks a process and blocks for the length of it. Run it on
+    // the blocking pool: a wedged home directory must not stop this adapter
+    // reporting liveness, which is the part that matters.
+    let Some((id, label)) = tauri::async_runtime::spawn_blocking(latest_session)
+        .await
+        .unwrap_or(None)
+    else {
+        return;
+    };
     {
         let Ok(mut last) = LAST_SESSION.lock() else { return };
         if *last == id {

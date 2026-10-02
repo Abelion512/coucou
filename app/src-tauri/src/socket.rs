@@ -92,7 +92,15 @@ pub fn start(app: AppHandle) {
                 return;
             }
             // 0700 — not world-readable, as the macOS port hardened it.
-            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+            //
+            // Only ever on a directory whose own name is ours. The fallback path
+            // puts the socket directly in /tmp, and chmod'ing /tmp to 0700 as root
+            // (an AppImage in a container, say) locks out every other user on the
+            // machine, permanently, for a socket that does not need it: the socket
+            // file itself is already 0600 and the peer is checked by SO_PEERCRED.
+            if dir.file_name().map(|n| n == "coucou").unwrap_or(false) {
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+            }
         }
         let listener = match UnixListener::bind(&path) {
             Ok(l) => l,

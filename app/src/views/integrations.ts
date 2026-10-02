@@ -60,20 +60,33 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   const info = State.integrations[task.id];
   const configured = info?.configured ?? false;
   const error = info?.error ?? null;
+  const isClaude = task.id === "integration_claude";
   // The Claude Code pill is about hooks, not a key — the macOS wording would be
   // misleading here.
-  const missing = task.id === "integration_claude" ? "Hooks not installed" : "Key not configured";
-  const label = error ?? (configured ? "Connected · loading…" : missing);
-  const statusColor = error || !configured ? "#F4505E" : "#22C55E";
+  const missing = isClaude ? "Hooks not installed" : "Key not configured";
+  // Claude Code has no poller: "Connected · loading…" described a request that was
+  // never made, so the card sat on that wording forever. What it actually knows is
+  // whether hooks are installed and whether a session is running.
+  const label = error
+    ?? (isClaude
+      ? (configured ? "Hooks installed" : missing)
+      : (configured ? "Connected · loading…" : missing));
+  const statusColor = error || !configured ? "#F4505E" : "#22c55e";
 
   const actions = h("div", { class: "int-actions" });
-  if (task.id === "integration_claude") {
+  if (isClaude) {
+    // A session that has never reported has no cwd, and handing `null` to a
+    // launcher opened whatever the desktop felt like — which reads as a button
+    // that does nothing. Say what it will open instead of pretending.
+    const cwd = task.sessionCwd;
     actions.append(
       h("button", {
         class: "link-btn",
-        style: `color:${task.color}b3`,
-        text: "Open in editor",
-        onclick: () => void Bridge.openInEditor(task.sessionCwd ?? null),
+        style: `color:${cwd ? `${task.color}b3` : "#6b7079"}`,
+        text: cwd ? `Open ${cwd.split("/").filter(Boolean).pop() ?? cwd}` : "No session yet",
+        onclick: () => {
+          if (cwd) void Bridge.openInEditor(cwd);
+        },
       }),
     );
   } else if (task.id === "integration_n8n") {

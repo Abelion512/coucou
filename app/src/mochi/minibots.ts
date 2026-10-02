@@ -9,6 +9,7 @@ interface MiniBot {
   engine: BotEngine;
   cssSize: number;
   taskId: string;
+  ctx: CanvasRenderingContext2D | null;
 }
 
 const live = new Map<HTMLCanvasElement, MiniBot>();
@@ -48,7 +49,13 @@ export function createMiniBot(task: AgentTask, bodySize: number): HTMLElement {
     engine.eyeOverrideUntil = Number.POSITIVE_INFINITY;
   }
 
-  live.set(canvas, { canvas, engine, cssSize: engineSize, taskId: task.id });
+  live.set(canvas, {
+    canvas,
+    engine,
+    cssSize: engineSize,
+    taskId: task.id,
+    ctx: canvas.getContext("2d"),
+  });
   return slot;
 }
 
@@ -71,11 +78,33 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
 export function tickMiniBots(dt: number) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   for (const mb of live.values()) {
-    const ctx = mb.canvas.getContext("2d");
+    // Only up to four mini bots are ever on screen — the pill grid, or the compact
+    // grid, never both — and the off-view ones are `opacity: 0` rather than
+    // `display: none`, so they were being drawn into the void every frame.
+    if (!mb.canvas.isConnected) continue;
+    if (!isVisible(mb.canvas)) continue;
+    // An engine with nothing animating needs no redraw; the island's own loop
+    // already trusts `busy` for its stop condition.
+    if (!mb.engine.busy) continue;
+    const ctx = mb.ctx ?? (mb.ctx = mb.canvas.getContext("2d"));
     if (!ctx) continue;
     mb.engine.update(dt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, mb.cssSize, mb.cssSize);
     mb.engine.draw(ctx, mb.cssSize, mb.cssSize);
   }
+}
+
+/** Is this canvas inside something the user can actually see? */
+function isVisible(canvas: HTMLCanvasElement): boolean {
+  let el: Element | null = canvas;
+  while (el && el !== document.body) {
+    if (el instanceof HTMLElement) {
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+      if (Number(style.opacity) === 0) return false;
+    }
+    el = el.parentElement;
+  }
+  return true;
 }

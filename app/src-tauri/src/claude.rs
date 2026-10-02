@@ -14,6 +14,27 @@ use crate::secrets;
 const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Is this base a relay on this machine? `http://localhost:20128/v1` is a proxy
+/// the user runs; `http://relay.example.com` is somebody else's.
+fn is_loopback(base: &str) -> bool {
+    let rest = match base.split_once("://") {
+        Some((_, r)) => r,
+        None => return false, // no scheme: not something we will hand a key to
+    };
+    // An IPv6 literal keeps its brackets (`[::1]:8642`), and splitting on ':'
+    // alone would leave just `[` — so trim that shape first.
+    let authority = rest.split('/').next().unwrap_or("");
+    let host = authority
+        .strip_prefix('[')
+        .and_then(|h| h.split(']').next())
+        .unwrap_or_else(|| authority.split(':').next().unwrap_or(""))
+        .to_ascii_lowercase();
+    matches!(host.as_str(), "localhost" | "::1")
+        || host == "127.0.0.1"
+        || (host.starts_with("127.") && host.split('.').count() == 4)
+        || host == "0.0.0.0"
+}
+
 /// The Messages endpoint to call: the configured base URL with /v1/messages
 /// appended, unless the base already ends in /v1/messages. Same-body-compatible
 /// relays (Chinese model relays, LiteLLM, corporate gateways) then work with a
@@ -97,13 +118,23 @@ pub async fn send(
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    // A custom relay that authenticates itself (local proxy, LAN gateway) needs
-    // no key; the official API does.
+    // Where may the key go?
+    //
+    // The official API obviously. A relay on loopback too — that is a proxy on
+    // this same machine (9router and friends), and 9router rejects a Messages
+    // request without one. A relay anywhere else: no. `api_base` is a plain
+    // string in a 0644 JSON file, so any same-uid process can rewrite it and read
+    // the user's Anthropic key out of the next chat message — a persistence trick
+    // that works even where the keyring collection itself is locked. A remote
+    // relay should ask for its own credentials.
     let custom = api_base.map(str::trim).filter(|b| !b.is_empty());
-    let key = match secrets::get("anthropic-api-key") {
-        Some(k) => Some(k),
-        None if custom.is_some() => None,
-        None => return Err("API key missing. Open settings.".to_string()),
+    let key = match custom {
+        Some(base) if !is_loopback(base) => None,
+        _ => match secrets::get("anthropic-api-key") {
+            Some(k) => Some(k),
+            None if custom.is_some() => None,
+            None => return Err("API key missing. Open settings.".to_string()),
+        },
     };
 
     let mut content: Vec<Value> = Vec::new();
@@ -187,6 +218,11 @@ pub async fn send(
 async fn call(key: Option<&str>, api_base: Option<&str>, body: &Value) -> Result<Value, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(90))
+        // reqwest strips `Authorization` on a cross-host redirect but leaves
+        // `x-api-key` alone, so a relay answering 302 to anywhere else would
+        // receive the credential verbatim. A relay that needs to move the user
+        // somewhere should say so with a real URL.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -283,7 +319,23 @@ fn base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::base64;
+    use super::{base64, is_loopback};
+
+    /// The key is the one credential this app holds, and `api_base` is a plain
+    /// string in a world-readable JSON file — so a relay only ever sees it when
+    /// the relay is on this machine.
+    #[test]
+    fn only_local_relays_may_receive_the_key() {
+        assert!(is_loopback("http://localhost:20128/v1"));
+        assert!(is_loopback("http://127.0.0.1:8642"));
+        assert!(is_loopback("HTTP://127.9.9.9/v1"));
+        assert!(is_loopback("http://[::1]:1234/v1"));
+        // A host that merely *starts* with a loopback-looking name is not loopback.
+        assert!(!is_loopback("http://localhost.attacker.example/v1"));
+        assert!(!is_loopback("https://api.anthropic.com"));
+        assert!(!is_loopback("http://192.168.1.10:20128/v1"));
+        assert!(!is_loopback("20128"));
+    }
 
     #[test]
     fn base64_matches_rfc4648_vectors() {

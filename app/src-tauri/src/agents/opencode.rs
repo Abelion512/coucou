@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::Sender;
 
-use super::{emit, Agent, AgentEvent, AgentState};
+use super::{Agent, AgentEvent, AgentState};
 use crate::log;
 
 /// The audited default; only used when discovery finds nothing.
@@ -46,6 +46,25 @@ static LAST_SESSION: Mutex<String> = Mutex::new(String::new());
 /// True while the SSE loop is connected — the "healthy" of this adapter.
 pub fn healthy() -> bool {
     RUNNING.load(Ordering::Relaxed)
+}
+
+/// The last state put on the pill, so a repeated one costs nothing.
+///
+/// Without this the adapter emitted `Working` after *every* SSE line — including
+/// `server.heartbeat` on a completely idle server — and it emitted it *after*
+/// `session.idle` had already said `Idle`, so the pill could never rest.
+static LAST_STATE: Mutex<String> = Mutex::new(String::new());
+
+async fn set_state_if_changed(tx: &Sender<AgentEvent>, state: AgentState) {
+    let key = format!("{state:?}");
+    {
+        let Ok(mut last) = LAST_STATE.lock() else { return };
+        if *last == key {
+            return;
+        }
+        *last = key;
+    }
+    let _ = tx.send(AgentEvent::State { agent: Agent::Opencode, state }).await;
 }
 
 fn client() -> reqwest::Client {
@@ -97,9 +116,7 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                 }
                 _ => {
                     RUNNING.store(false, Ordering::Relaxed);
-                    let _ = tx
-                        .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Unavailable })
-                        .await;
+                    set_state_if_changed(&tx, AgentState::Unavailable).await;
                 }
             }
             tokio::time::sleep(backoff).await;
@@ -151,9 +168,7 @@ async fn stream_events(
                 poll_sessions(tx).await;
             }
             _ = tokio::time::sleep_until(*last_activity + IDLE_AFTER) => {
-                let _ = tx
-                    .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Idle })
-                    .await;
+                set_state_if_changed(tx, AgentState::Idle).await;
                 *last_activity = tokio::time::Instant::now();
             }
         }
@@ -166,7 +181,7 @@ async fn stream_events(
 /// unknown still counts as activity (it proves the server is alive) but never
 /// becomes UI content.
 async fn handle_event(
-    app: &tauri::AppHandle,
+    _app: &tauri::AppHandle,
     tx: &Sender<AgentEvent>,
     v: serde_json::Value,
     last_activity: &mut tokio::time::Instant,
@@ -203,14 +218,10 @@ async fn handle_event(
                 .await;
         }
         "session.idle" => {
-            let _ = tx
-                .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Idle })
-                .await;
+            set_state_if_changed(tx, AgentState::Idle).await;
         }
         "session.error" => {
-            let _ = tx
-                .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Error })
-                .await;
+            set_state_if_changed(tx, AgentState::Error).await;
         }
         "session.deleted" => {
             let _ = tx
@@ -246,9 +257,7 @@ async fn handle_event(
 
         "message.updated" => {
             // Turns can end here without a session.idle; keep the pill alive.
-            let _ = tx
-                .send(AgentEvent::State { agent: Agent::Opencode, state: AgentState::Working })
-                .await;
+            set_state_if_changed(tx, AgentState::Working).await;
         }
 
         // `permission.asked` / `permission.replied`: upstream's plugin answers
@@ -274,8 +283,6 @@ async fn handle_event(
             log::line(format!("opencode event {kind}"));
         }
     }
-
-    emit(app, &AgentEvent::State { agent: Agent::Opencode, state: AgentState::Working });
 }
 
 /// Titles for the pills: `/session` is cheap and documented. Fetched on the

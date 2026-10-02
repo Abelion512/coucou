@@ -80,6 +80,11 @@ export class Island {
   private uploadShown = false;
   /** Window width in CSS px, so a resize re-centres instead of clipping. */
   private panelPx = 0;
+  // Memoised style writes and the canvas context, for the same reason as `geom`.
+  private botPos: { left: number; top: number } | null = null;
+  private botCtx: CanvasRenderingContext2D | null = null;
+  /** Last width written to the countdown bar, so idle frames write nothing. */
+  private countdownPx: string | null = null;
 
   private engine = new BotEngine();
   private greeting = new Greeting();
@@ -829,11 +834,20 @@ export class Island {
       this.botCanvas.height = Math.round(hCss * dpr);
       this.botCanvas.style.width = `${w}px`;
       this.botCanvas.style.height = `${hCss}px`;
+      // Resizing a canvas clears it, so the context has to be re-fetched.
+      this.botCtx = null;
     }
-    this.botCanvas.style.left = `${this.botCx.value - w / 2}px`;
-    this.botCanvas.style.top = `${this.botCy.value - BOT_OVERHANG / 2 - hCss / 2}px`;
+    // Same reasoning as applyGeometry: a style write invalidates style and layout
+    // on WebKitGTK, and these two values are constant whenever Mochi has settled.
+    const left = this.botCx.value - w / 2;
+    const top = this.botCy.value - BOT_OVERHANG / 2 - hCss / 2;
+    if (this.botPos?.left !== left || this.botPos?.top !== top) {
+      this.botPos = { left, top };
+      this.botCanvas.style.left = `${left}px`;
+      this.botCanvas.style.top = `${top}px`;
+    }
 
-    const ctx = this.botCanvas.getContext("2d");
+    const ctx = (this.botCtx ??= this.botCanvas.getContext("2d"));
     if (!ctx) return;
 
     const focus = State.focusTask;
@@ -868,15 +882,23 @@ export class Island {
   }
 
   private updateCountdown(nowMs: number) {
-    if (State.mode !== "expanded" || State.isPinned || this.homeCollapseAt == null) {
-      this.countdown.style.width = "0px";
-      return;
+    // The early return used to write "0px" on every frame of the entire
+    // collapsed and hidden lifecycle — 60 style invalidations a second for a bar
+    // that is not there. Writing only on change is the rule the rest of this file
+    // already follows.
+    let width = "0px";
+    if (State.mode === "expanded" && !State.isPinned && this.homeCollapseAt != null) {
+      const autoClose = State.settings.autoCloseInterval;
+      const windowS = Math.min(10, autoClose * 0.6);
+      const remaining = (this.homeCollapseAt - nowMs) / 1000;
+      if (remaining < windowS) {
+        width = `${Math.max(0, clamp(remaining / windowS, 0, 1) * 160)}px`;
+      }
     }
-    const autoClose = State.settings.autoCloseInterval;
-    const windowS = Math.min(10, autoClose * 0.6);
-    const remaining = (this.homeCollapseAt - nowMs) / 1000;
-    this.countdown.style.width =
-      remaining < windowS ? `${Math.max(0, clamp(remaining / windowS, 0, 1) * 160)}px` : "0px";
+    if (this.countdownPx !== width) {
+      this.countdownPx = width;
+      this.countdown.style.width = width;
+    }
   }
 
   // ── DOM sync ────────────────────────────────────────────────────────────────
