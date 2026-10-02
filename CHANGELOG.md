@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Frame loop no longer writes DOM styles it already wrote: `applyGeometry()` and
+  `updateBotTargets()` memoise their last values, and the drop-canvas class toggles
+  only flip on a change. On WebKitGTK every style write invalidates style and layout,
+  so the idle island was doing ~8 pointless writes plus a fresh glow gradient per
+  frame; `#island` also drops its permanent `will-change` layer for the same reason
+  the ticker rows did (#43)
+- Docs: the ponytail ladder now starts with a classification step — **DEBT** (pay it
+  down, deleting is a fix), **GAIN** (build the minimum that works), **REVIEW** (read
+  it, verify, then decide) — with deletion explicitly beating addition; `CLAUDE.md`'s
+  duplicated, partly stale upstream-sync section is merged into one; `docs/LINUX.md`
+  gains a performance section (how the 0 %-when-hidden rule is kept) and a list of
+  what is deliberately still pending
+
 - Cleanup pass, no new features: the dead `cfg(windows)` dependency block (`windows`
   crate, `keyring` Windows backend), the `windows_subsystem` attribute and the
   `.exe` branch in the hook installer are gone from a Linux-only tree; the Claude

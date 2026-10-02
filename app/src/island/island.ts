@@ -58,6 +58,14 @@ export class Island {
   private botCy = new Spring(16);
   private botSize = new Spring(10);
 
+  // Last geometry / glow actually written to the DOM. The frame loop runs at
+  // 60 Hz but these only change while something moves; writing them every frame
+  // invalidated style and layout in WebKitGTK for nothing.
+  private geom: { w: number; h: number; r: number; miniLeft: number; miniTop: number; sideLeft: number } | null = null;
+  private glow: { shown: boolean; d: number; cx: number; cy: number; color: string; opacity: number } | null = null;
+  private botVisible: boolean | null = null;
+  private uploadShown = false;
+
   private engine = new BotEngine();
   private greeting = new Greeting();
 
@@ -473,16 +481,27 @@ export class Island {
     const w = this.width.value;
     const hh = this.height.value;
     const r = this.radius.value;
-    this.islandEl.style.width = `${w}px`;
-    this.islandEl.style.height = `${hh}px`;
-    this.islandEl.style.borderRadius = `0 0 ${r}px ${r}px`;
-    this.islandEl.style.transform = `translateX(-50%)`;
-    // These follow the island as it resizes, so they belong here rather than in
-    // the state-driven DOM sync.
-    this.miniGrid.style.left = `${w - 40 - 14.5}px`;
-    this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
-    this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
-    this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
+    // Style writes are the expensive part of a frame in WebKitGTK: every one
+    // invalidates style and layout. Geometry only moves while something is
+    // animating, so remember what we last wrote and write nothing new on the
+    // frames where nothing changed.
+    const miniLeft = w - 40 - 14.5;
+    const miniTop = hh / 2 - 14.5;
+    const sideLeft = (w - EXPANDED_W) / 2;
+    const g = this.geom;
+    if (!g || g.w !== w || g.h !== hh || g.r !== r || g.miniLeft !== miniLeft || g.miniTop !== miniTop || g.sideLeft !== sideLeft) {
+      this.islandEl.style.width = `${w}px`;
+      this.islandEl.style.height = `${hh}px`;
+      this.islandEl.style.borderRadius = `0 0 ${r}px ${r}px`;
+      this.islandEl.style.transform = `translateX(-50%)`;
+      // These follow the island as it resizes, so they belong here rather than in
+      // the state-driven DOM sync.
+      this.miniGrid.style.left = `${miniLeft}px`;
+      this.miniGrid.style.top = `${miniTop}px`;
+      this.greetingCanvas.style.left = `${sideLeft}px`;
+      this.uploadCanvas.el.style.left = `${sideLeft}px`;
+      this.geom = { w, h: hh, r, miniLeft, miniTop, sideLeft };
+    }
 
     const rect = { x: (PANEL_W - w) / 2, y: 0, w, h: hh };
     const p = this.pushedRect;
@@ -702,8 +721,11 @@ export class Island {
 
     const uploadActive = this.uploadActive;
     if (uploadActive) this.uploadCanvas.draw(UploadSeq.frame(), nowMs / 1000);
-    this.uploadCanvas.el.classList.toggle("on", uploadActive);
-    this.viewsEl.classList.toggle("hidden-by-upload", uploadActive);
+    if (this.uploadShown !== uploadActive) {
+      this.uploadShown = uploadActive;
+      this.uploadCanvas.el.classList.toggle("on", uploadActive);
+      this.viewsEl.classList.toggle("hidden-by-upload", uploadActive);
+    }
 
     tickMiniBots(dt);
     this.views.get(State.view)?.tick?.(nowMs);
@@ -743,20 +765,34 @@ export class Island {
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
     // The drop canvas draws its own Mochi; two of them would overlap.
     const visible = p.opacity > 0 && !greetingActive && !this.uploadActive;
-    this.botCanvas.style.opacity = visible ? "1" : "0";
+    if (this.botVisible !== visible) {
+      this.botVisible = visible;
+      this.botCanvas.style.opacity = visible ? "1" : "0";
+    }
 
-    if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive) {
-      const d = p.diameter;
-      const color = botGlowColor(State.effectiveState);
-      this.botGlow.style.display = "block";
-      this.botGlow.style.width = `${d * 2.2}px`;
-      this.botGlow.style.height = `${d * 2.2}px`;
-      this.botGlow.style.left = `${this.botCx.value - d * 1.1}px`;
-      this.botGlow.style.top = `${this.botCy.value - d * 1.1}px`;
-      this.botGlow.style.background = `radial-gradient(circle, ${color} 0%, transparent 62%)`;
-      this.botGlow.style.opacity = String(botGlowOpacity(State.effectiveState));
-    } else {
-      this.botGlow.style.display = "none";
+    const showGlow =
+      State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive;
+    const d = p.diameter;
+    const cx = this.botCx.value;
+    const cy = this.botCy.value;
+    const color = showGlow ? botGlowColor(State.effectiveState) : "";
+    const opacity = showGlow ? botGlowOpacity(State.effectiveState) : 0;
+    // Same reasoning as applyGeometry: the gradient is a fresh string every
+    // frame otherwise, and six style writes invalidate layout 60 times a second.
+    const glow = this.glow;
+    if (!glow || glow.shown !== showGlow || glow.d !== d || glow.cx !== cx || glow.cy !== cy || glow.color !== color || glow.opacity !== opacity) {
+      this.glow = { shown: showGlow, d, cx, cy, color, opacity };
+      if (showGlow) {
+        this.botGlow.style.display = "block";
+        this.botGlow.style.width = `${d * 2.2}px`;
+        this.botGlow.style.height = `${d * 2.2}px`;
+        this.botGlow.style.left = `${cx - d * 1.1}px`;
+        this.botGlow.style.top = `${cy - d * 1.1}px`;
+        this.botGlow.style.background = `radial-gradient(circle, ${color} 0%, transparent 62%)`;
+        this.botGlow.style.opacity = String(opacity);
+      } else {
+        this.botGlow.style.display = "none";
+      }
     }
   }
 

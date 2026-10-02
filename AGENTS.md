@@ -24,6 +24,7 @@ tree, and reintroducing `cfg(windows)` branches is a mistake, not portability.
 | `scripts/sync_upstream.sh` | Upstream merge tool; writes `SYNC-TODO.md` |
 | `docs/LINUX.md` | Build, verify, upstream-sync policy, conflict map |
 | `docs/SPEC-linux-mult-agent.md` | The port + adapters spec |
+| `docs/SPEC-agent-pills.md` | Agent-pills design — matured, **deferred**, not built |
 
 ## Build & verify
 
@@ -49,13 +50,29 @@ Before finishing any change: `bun run build` (runs `tsc --noEmit`) and both
 4. **Loopback-only.** Adapters talk to `127.0.0.1` and local Unix sockets.
    No cloud, no telemetry.
 5. **0 % CPU when the island is hidden.** Pollers park on condvars; front-end
-   animations pause via `#content.away`.
+   animations pause via `#content.away`. In the frame loop, write a DOM style only
+   when its value actually changed — `applyGeometry()` and `updateBotTargets()`
+   memoise what they last wrote; on WebKitGTK every write invalidates style and
+   layout.
 6. **Hook installs are sacred**: dated backup of `~/.claude/settings.json`,
    show the diff, write only after an explicit click, refuse a stale preview.
 
 ## Style: the lazy-senior ladder (ponytail)
 
-Before writing code, stop at the first rung that holds:
+**Classify first — one word, no debate:**
+
+| | what it is | the move |
+|---|---|---|
+| **DEBT** | dead code, a doc that lies, a stale dependency, a bug in an existing path | pay it down; **deleting is a fix** |
+| **GAIN** | something is broken or impossible today without it | build the minimum that works |
+| **REVIEW** | someone else's change, or one of your own assumptions | read it, verify it, then decide — never assume |
+
+Deletion beats addition: an addition must name the thing it replaces or the
+failure it prevents. Deferred twice is a delete candidate, not a TODO. Debt and
+gain ship together when they touch the same file; a cleanup that only tidies is
+wasted motion.
+
+Then stop at the first rung that holds:
 
 1. Does this need to exist? → no: skip it (YAGNI)
 2. Already in this codebase? → reuse it

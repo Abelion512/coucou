@@ -72,7 +72,9 @@ body {
   background: #000;
   border-radius: 0 0 14px 14px;
   overflow: visible;
-  will-change: width, height, transform;
+  /* No will-change: the island resizes for a few hundred milliseconds at a
+     time, and on WebKitGTK the permanent compositing layer cost more than it
+     saved — same reasoning as the ticker rows (#43). */
 }
 
 #island-clip {

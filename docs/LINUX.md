@@ -102,3 +102,34 @@ checklist 🔶 seperti biasa.
 - `app/src-tauri/src/agents/` — AgentBus + adapter OpenCode (SSE), Hermes (`gateway.sock`),
   Freebuff/Codebuff (file-watch `~/.config/manicode/`). Observe-only; hanya Claude-Code punya `PermissionReq`.
 - `app/hook/src/unix.rs` — relay `coucou-hook`: ENOENT → exit 0 instan (Claude Code tak pernah diblokir).
+
+## Performa
+
+Aturan mainnya: **0 % CPU saat island tersembunyi**, dan tidak ada kerja sia-sia saat
+ia tampil.
+
+- Poller integrasi dan adapter berhenti melakukan apa pun saat `PAUSED` atau integrasi
+  dimatikan — interval tokio tetap berdetak, pekerjaannya tidak (`integrations.rs`).
+- Animasi view berhenti lewat `#content.away * { animation-play-state: paused }`.
+- Frame loop (`app/src/island/island.ts`) hanya menulis style DOM **kalau nilainya
+  berubah**: `applyGeometry()` dan `updateBotTargets()` menyimpan nilai terakhir yang
+  mereka tulis. Di WebKitGTK setiap style write menginvalidasi style dan layout;
+  sebelumnya gradient glow dibangun ulang 60×/detik tanpa perlu.
+- Tidak ada `will-change` pada `#island` (resizenya hanya beberapa ratus milidetik;
+  layer permanennya lebih mahal daripada hematnya — alasan yang sama dengan #43).
+- Ukuran kanvas hanya di-set ulang kalau ukurannya benar-benar berubah
+  (`canvasPx` di `drawBot()`, sama untuk mini Mochi).
+
+Cara cek cepat: `top -p $(pgrep -f coucou)` saat island dalam keadaan compact/hidden —
+CPU harus ~0.
+
+## Yang masih tertunda
+
+- **Agent pills** (OpenCode/Hermes/Freebuff tampil sebagai pill di island): desainnya
+  sudah matang di [`SPEC-agent-pills.md`](SPEC-agent-pills.md), sengaja belum
+  dikerjakan. Ringkasnya: event `agent` sudah sampai ke front end lewat
+  `agents::emit`, tapi belum ada yang membaca — `app/src/island/agents.ts`-nya belum ada.
+- **Stub agent di verify script**: §4/5/6 masih SKIP tanpa agent asli; stub socket +
+  stub SSE akan mengubahnya jadi PASS.
+- **Dedupe state adapter**: Hermes mengirim `Unavailable` tiap poll 5 detik selama
+  offline; island harus mengabaikannya kalau state tidak berubah.
