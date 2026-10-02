@@ -38,7 +38,7 @@ s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.settimeout(timeout)
 try:
     s.connect(path)
-    s.sendall(payload.encode())
+    s.sendall(payload.encode() + b"\n")
     data = b""
     while True:
         chunk = s.recv(65536)
@@ -61,6 +61,22 @@ relay_socket_path() {
         if [ ${#p} -le 107 ]; then echo "$p"; return; fi
     fi
     echo "/tmp/coucou-$(id -u).sock"
+}
+
+# A socket *file* outlives the app that bound it: the kernel keeps the inode, so
+# a crashed Coucou leaves a socket that refuses every connection. Treating that
+# as "the running app accepted it" turns a dead app into a silent PASS.
+socket_live() {
+    command -v python3 >/dev/null 2>&1 || return 1
+    python3 - "$1" <<'PYEOF'
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(2)
+try:
+    s.connect(sys.argv[1]); sys.exit(0)   # something is listening
+except Exception:
+    sys.exit(1)
+PYEOF
 }
 
 say ""
@@ -112,7 +128,7 @@ say ""
 # ── 3. Relay wire protocol ────────────────────────────────────────────────────
 say "3 · Relay wire protocol (hook ⇄ socket)"
 SOCK="$(relay_socket_path)"
-if [ -S "$SOCK" ]; then
+if [ -S "$SOCK" ] && socket_live "$SOCK"; then
     say "  (live socket found at $SOCK — testing against the running app)"
     OUT=$(echo '{"hook_event_name":"SessionStart","cwd":"/tmp"}' | timeout 5 "$HOOK_BIN" SessionStart 2>/dev/null)
     RC=$?
@@ -122,7 +138,11 @@ if [ -S "$SOCK" ]; then
         fail "live app refused a fire-and-forget event (exit $RC)"
     fi
 else
-    say "  (app not running — exercising the protocol with a throwaway listener)"
+    if [ -S "$SOCK" ]; then
+        say "  (stale socket at $SOCK — nothing listening, Coucou is not running)"
+    else
+        say "  (app not running — exercising the protocol with a throwaway listener)"
+    fi
     if command -v python3 >/dev/null 2>&1; then
         SOCK_DIR="$(dirname "$SOCK")"
         MADE_DIR=0; [ -d "$SOCK_DIR" ] || { mkdir -p "$SOCK_DIR"; MADE_DIR=1; }
@@ -200,9 +220,16 @@ if [ -S "$HERMES_SOCK" ]; then
     if [ "$RC" = "2" ]; then
         skip "neither python3 nor nc -U available to talk to a Unix socket"
     elif printf '%s' "$REPLY" | grep -q '"gateway_state"'; then
-        STATE=$(printf '%s' "$REPLY" | grep -o '"gateway_state":"[^"]*"' | head -1 | cut -d'"' -f4)
-        AGENTS=$(printf '%s' "$REPLY" | grep -o '"active_agents":[0-9]*' | head -1 | cut -d: -f2)
-        pass "status verb answered: gateway_state=$STATE active_agents=${AGENTS:-?}"
+        # The gateway serialises with ", " / ": " separators, so the colon is
+        # followed by a space — match it, or the extraction silently yields "".
+        STATE=$(printf '%s' "$REPLY" | grep -o '"gateway_state": *"[^"]*"' | head -1 | cut -d'"' -f4)
+        AGENTS=$(printf '%s' "$REPLY" | grep -o '"active_agents": *[0-9]*' | head -1 | cut -d: -f2 | tr -d ' ')
+        if [ -n "$STATE" ]; then
+            pass "status verb answered: gateway_state=$STATE active_agents=${AGENTS:-?}"
+        else
+            # A reply we can grep but not parse is a broken check, not a pass.
+            fail "gateway_state present but unextractable (reply: $(printf '%s' "$REPLY" | head -c 120))"
+        fi
     else
         fail "socket exists but the status verb gave no gateway_state (reply: $(printf '%s' "$REPLY" | head -c 120))"
     fi
@@ -270,7 +297,6 @@ fi
 LEAK=0
 for d in "$HOME/.local/share/coucou" "$HOME/.config/coucou"; do
     [ -d "$d" ] || continue
-    if grep -rqa "tokenKey" "$d" 2>/dev/null | grep -vq '^Binary'; then :; fi
     if grep -rqa "tokenKey" "$d" >/dev/null 2>&1; then LEAK=1; fail "state/log under $d mentions tokenKey"; fi
 done
 [ "$LEAK" -eq 0 ] && pass "no tokenKey in coucou state/log directories"

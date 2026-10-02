@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- The e2e harness was reporting passes it had not earned. Three of the ten checks
+  could go green while verifying nothing, and one was simply broken:
+  - **§5 was a real FAIL.** `socket_send`'s python branch sent the payload raw while
+    its `nc` branch appended a newline — and the newline is the gateway's frame
+    delimiter. The Hermes gateway waits for a complete line and, given none, answers
+    nothing at all after ~2 s, so a client that forgets it is indistinguishable from
+    a dead gateway. `hermes.rs` already sent `\n`, which is why the app worked and
+    only the script failed
+  - **§5 then passed vacuously.** The gateway serialises with `", "` / `": "`, so the
+    `"gateway_state":"…"` pattern never matched and the extraction silently yielded
+    `gateway_state= active_agents=?` — reported as PASS. It now tolerates the space,
+    and a reply it can grep but not parse fails instead of passing
+  - **§3 tested a dead app.** A crashed Coucou leaves its socket inode behind, and
+    `-S` matched it, so "testing against the running app" fired against nothing and
+    passed because the hook correctly exited 0. Liveness is now a real connect probe,
+    and a stale socket falls through to the throwaway-listener branch — which checks
+    the documented `PermissionRequest` round-trip, a stronger test than the one it
+    replaces
+  - Deleted a provably dead line in §7: `grep -q` emits no stdout, so piping it into
+    `grep -vq '^Binary'` could never take the branch. The real leak check beside it
+    still fires (verified with a seeded `tokenKey`)
+- `docs/LINUX.md` documents how to test the three agents end to end on a laptop
+  (what each needs running) and what is deliberately still pending
+
 - Upstream merged (9 commits). Upstream now ports Linux inside its own `windows/`
   tree — a Unix-socket relay, a `platform/` module with a gtk-layer-shell layer and
   its own `linux.yml` — so the merge paired those files with our `app/` paths by
@@ -17,8 +41,6 @@
 - `AGENTS.md`/`CLAUDE.md` now say how to commit: batch by intent, a commit is worth
   making for a fix, a deletion or a finished change — never for a typo, and land it
   yourself instead of asking the user to pull
-- `docs/LINUX.md` documents how to test the three agents end to end on a laptop
-  (what each needs running) and what is deliberately still pending
 
 - Frame loop no longer writes DOM styles it already wrote: `applyGeometry()` and
   `updateBotTargets()` memoise their last values, and the drop-canvas class toggles

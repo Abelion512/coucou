@@ -152,9 +152,15 @@ opencode serve --port 54321
 # Hermes
 hermes gateway run        # socket di ~/.hermes/gateway.sock
 
-# Freebuff/Codebuff — cukup jalankan CLI-nya sekali
-freebuff                  # menulis ~/.config/manicode/freebuff-live-<pid>.json
+# Freebuff/Codebuff — TUI-nya harus benar-benar dipakai
+freebuff                  # lalu KIRIM satu pesan, baru ia menulis
+                          # ~/.config/manicode/freebuff-live-<pid>.json
 ```
+
+Freebuff tidak menulis file live saat start: yang muncul cuma "Your first message
+starts the session". Jadi §6 tetap SKIP kalau CLI-nya cuma dibuka lalu ditinggal —
+harus ada pesan yang benar-benar terkirim (butuh kuota, jadi `0/25 Freebucks`
+belum tentu cukup).
 
 Lalu jalankan `./scripts/verify_coucou_linux.sh --no-build`: §4/5/6 berubah dari SKIP
 ke PASS begitu tiga hal di atas hidup. Event-nya masuk lewat `agents::emit("agent")`;
@@ -162,3 +168,17 @@ tanpa `app/src/island/agents.ts` pills-nya belum tampil — itu memang dikerjaka
 manual, lihat [`SPEC-agent-pills.md`](SPEC-agent-pills.md). Log adapter ada di
 `$XDG_DATA_HOME/coucou/coucou.log` (`hermes: gateway offline`, `opencode: …`), jadi
 "tidak jalan" vs "jalan tapi tidak ada UI" bisa dibedakan dari situ.
+
+### Dua jebakan yang sudah pernah menipu
+
+Adapter Hermes dan harness-nya bicara dua bahasa berbeda, dan itu sudah beberapa kali
+menipu:
+
+- **Newline itu frame delimiter.** `~/.hermes/gateway.sock` tidak menjawab apa pun
+  kalau JSON-nya tidak diakhiri `\n` — diam saja ~2 detik lalu nutup. Relay dan
+  `hermes.rs` sudah mengirim `\n`; harness pernah tidak, dan itu terlihat seperti
+  gateway mati.
+- **Socket yang sudah mati masih berbentuk socket.** Kalau Coucou crash, inode-nya
+  tetap ada di `$XDG_RUNTIME_DIR/coucou/coucou.sock` dan `-S` tetap match, padahal
+  `connect()` dapat `ECONNREFUSED`. Semua probe harus connect dulu, bukan hanya
+  cek `-S`.

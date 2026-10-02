@@ -1,8 +1,11 @@
 // Hermes adapter — the gateway control socket.
 //
 // Verified live against Hermes v0.21.5: `~/.hermes/gateway.sock` speaks one
-// JSON line per connection — send `{"verb":"status"}`, read one line back,
-// the server closes. `identify` and `status` are the verified verbs; `status`
+// JSON line per connection — send `{"verb":"status"}` **plus a trailing newline**,
+// read one line back, the server closes. The newline is the frame delimiter:
+// without it the gateway waits for a complete line and answers nothing at all
+// (silently, after ~2 s), so a client that forgets it looks exactly like a dead
+// gateway. `identify` and `status` are the verified verbs; `status`
 // carries `gateway_state`, `active_agents`, `code_version` and
 // `platforms.<name>.state`.
 //
