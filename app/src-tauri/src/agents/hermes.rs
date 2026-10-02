@@ -15,6 +15,8 @@
 // its own approval flow (`tools/approval.py`) — Coucou only watches, it never
 // sends decisions, so this adapter has no write path at all.
 
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -26,6 +28,9 @@ use crate::log;
 
 const POLL: Duration = Duration::from_secs(5);
 const TIMEOUT: Duration = Duration::from_secs(2);
+/// The session label is a nicety, not a liveness signal, so it is read far less
+/// often than the gateway is probed.
+const SESSION_POLL: Duration = Duration::from_secs(30);
 
 /// Whether the gateway actually answered on the last poll. The socket file alone
 /// is not liveness: a crashed gateway leaves it behind, and `Path::exists` would
@@ -43,6 +48,46 @@ pub fn api_base() -> Option<String> {
     API_BASE.lock().ok().and_then(|v| v.clone())
 }
 
+/// The session id last put on the pill, so a poll does not re-announce it.
+static LAST_SESSION: Mutex<String> = Mutex::new(String::new());
+
+/// The most recent real conversation Hermes has, as `(id, label)`.
+///
+/// The gateway's control socket has no sessions verb — it answers `identify` and
+/// `status`, and its status carries a liveness flag but no session identity. The
+/// sessions live in `~/.hermes/state.db`, so this shells out to the `sqlite3`
+/// client read-only rather than linking SQLite into the app: one short-lived
+/// process every 30 s costs nothing next to a C dependency in a binary that has to
+/// load fast, because the hook relay spawns it on every Claude Code event.
+///
+/// Returns `None` whenever it cannot answer honestly — no `sqlite3`, no database,
+/// no table. A missing label must never be a wrong one.
+fn latest_session() -> Option<(String, String)> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let db = home.join(".hermes").join("state.db");
+    if !db.is_file() {
+        return None;
+    }
+    let out = Command::new("sqlite3")
+        .arg("-readonly")
+        .arg(&db)
+        // `cron_*` rows are the scheduler's own bookkeeping, not a conversation a
+        // person is looking at, so they would put a meaningless name on the pill.
+        .arg("select id, coalesce(nullif(display_name,''), model) from sessions where source<>'cron' order by rowid desc limit 1;")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let (id, label) = line.split_once('|')?;
+    let id = id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some((id.to_string(), label.trim().to_string()))
+}
+
 fn socket_path() -> String {
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
@@ -55,6 +100,7 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
         let mut interval = tokio::time::interval(POLL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut was_up = false;
+        let mut since_session = Duration::ZERO;
 
         loop {
             interval.tick().await;
@@ -66,6 +112,11 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                     }
                     RUNNING.store(true, Ordering::Relaxed);
                     report(app.clone(), &tx, reply).await;
+                    since_session += POLL;
+                    if since_session >= SESSION_POLL {
+                        since_session = Duration::ZERO;
+                        announce_session(&tx).await;
+                    }
                 }
                 None => {
                     if was_up {
@@ -194,4 +245,25 @@ async fn report(
 /// Liveness: the gateway answered on the last poll, not merely "the file is there".
 pub fn healthy() -> bool {
     RUNNING.load(Ordering::Relaxed)
+}
+
+/// Puts Hermes' own current session on the pill, once per change.
+async fn announce_session(tx: &Sender<AgentEvent>) {
+    let Some((id, label)) = latest_session() else { return };
+    {
+        let Ok(mut last) = LAST_SESSION.lock() else { return };
+        if *last == id {
+            return;
+        }
+        *last = id.clone();
+    }
+    log::line(format!("hermes: session {id} — {label}"));
+    let _ = tx
+        .send(AgentEvent::SessionStart {
+            agent: Agent::Hermes,
+            session_id: id,
+            project: label,
+            cwd: String::new(),
+        })
+        .await;
 }

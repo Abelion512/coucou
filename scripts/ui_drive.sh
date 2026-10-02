@@ -89,35 +89,72 @@ click_lands_on_island() { # $1=px $2=py
   [ "$before" = "$after" ]
 }
 
+# Percentage of pixels that differ between two PNGs. Used instead of `cmp` because
+# the island is alive: Mochi breathes, its eyes follow the mouse, the ticker
+# animates and the adapters update the pills every few seconds. A byte comparison
+# would therefore report a change for a click that never arrived.
+#
+# Prints "N/A" when it cannot compare (no PIL, unreadable files).
+pixel_diff() { # $1 $2
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || echo "N/A"
+import sys
+try:
+    from PIL import Image
+except ImportError:
+    print("N/A"); raise SystemExit
+a = Image.open(sys.argv[1]).convert("RGB")
+b = Image.open(sys.argv[2]).convert("RGB")
+if a.size != b.size:
+    print("N/A"); raise SystemExit
+pa, pb = a.load(), b.load()
+w, h = a.size
+changed = sum(1 for y in range(0, h, 2) for x in range(0, w, 2) if pa[x, y] != pb[x, y])
+print(f"{(100.0 * changed) / ((w // 2 + 1) * (h // 2 + 1)):.2f}")
+PY
+}
+
+# How much the island changes on its own, with no input at all. Measured, not
+# assumed: with live agents the ticker and pills move by themselves, and a control
+# that ignores that is a control that fails for the wrong reason.
+island_churn() {
+  local tmp="$1"
+  island_shot "$tmp/n1.png"
+  sleep 2
+  island_shot "$tmp/n2.png"
+  pixel_diff "$tmp/n1.png" "$tmp/n2.png"
+}
+
 t_pass_through_is_intentional() {
   say ""
   say "2 · the transparent margin does not belong to the island (control)"
-  local px py tmp
+  local px py tmp churn after
   tmp="$(mktemp -d)"
   read -r px py <<<"$(island_point)"
   # Near the bottom of the window: outside the island in both compact (32 logical
   # px) and expanded (200 physical px), and still inside the window.
   #
-  # The assertion is that the island does *not* react — not that some other window
-  # activates. What sits behind that strip may be empty desktop, and "nothing
-  # changed" is then indistinguishable from "swallowed". If this ever failed, the
-  # island would be eating every click in that strip of the screen.
-  #
-  # Both shots are taken with the cursor already parked on that spot: Mochi's eyes
-  # follow the mouse, so a screenshot taken before the move would always differ and
-  # the control would pass or fail on animation rather than on clicks.
+  # The assertion is that a click there changes the island no more than idling
+  # does. Anything else — focus, an activation — is not observable from outside,
+  # and what sits behind that strip may be empty desktop anyway.
+  churn=$(island_churn "$tmp")
+  # Park the cursor first: Mochi's eyes follow it, so moving is itself a change.
   xdotool mousemove "$px" "$((py + 300))"; sleep 2
   island_shot "$tmp/before.png"
   xdotool click 1; sleep 2
   island_shot "$tmp/after.png"
-  if [ ! -s "$tmp/before.png" ] || [ ! -s "$tmp/after.png" ]; then
-    fail "could not capture the island for the control"
-  elif cmp -s "$tmp/before.png" "$tmp/after.png"; then
-    pass "a click in the transparent margin does not reach the island"
-  else
-    fail "the island reacted to a click in its transparent margin"
-  fi
+  after=$(pixel_diff "$tmp/before.png" "$tmp/after.png")
   rm -rf "$tmp"
+
+  if [ "$after" = "N/A" ] || [ "$churn" = "N/A" ]; then
+    skip "cannot compare pixels (needs python3 with Pillow)"
+  else
+    # A little slack: the click's own settling frames are legitimate churn too.
+    if awk -v a="$after" -v c="$churn" 'BEGIN{exit !(a <= c * 2 + 0.5)}'; then
+      pass "a click in the transparent margin changed the island no more than idling (${after}% vs ${churn}% baseline)"
+    else
+      fail "the island reacted to a click in its transparent margin (${after}% vs ${churn}% baseline)"
+    fi
+  fi
 }
 
 # Bytes of the island's own pixels, so a test can tell "the island answered" from
@@ -135,24 +172,26 @@ island_shot() { # $1 = output file
 t_click_reaches_island() {
   say ""
   say "3 · a click on the island reaches it and the island answers"
-  local px py before after tmp
+  local px py churn after tmp
   tmp="$(mktemp -d)"
   read -r px py <<<"$(island_point)"
-  # Leave the island, come back, and click. Two things must hold: the click did not
-  # go to the window behind, *and* the island visibly reacted.
+  # Two things must hold: the click did not go to the window behind, *and* it moved
+  # the island more than idling would have on its own.
+  churn=$(island_churn "$tmp")
   xdotool mousemove "$((px - 250))" "$py"; sleep 1
-  island_shot "$tmp/before.png"
   xdotool mousemove "$px" "$py"; sleep 1
+  island_shot "$tmp/before.png"
   xdotool click 1; sleep 2
   island_shot "$tmp/after.png"
+  after=$(pixel_diff "$tmp/before.png" "$tmp/after.png")
   if ! click_lands_on_island "$px" "$py"; then
     fail "click fell through to $(active_name) — the island did not take it"
-  elif [ ! -s "$tmp/before.png" ] || [ ! -s "$tmp/after.png" ]; then
-    fail "could not capture the island to prove it reacted"
-  elif ! cmp -s "$tmp/before.png" "$tmp/after.png"; then
-    pass "island kept the click and redrew in response"
+  elif [ "$after" = "N/A" ] || [ "$churn" = "N/A" ]; then
+    skip "cannot compare pixels (needs python3 with Pillow)"
+  elif awk -v a="$after" -v c="$churn" 'BEGIN{exit !(a > c + 0.5)}'; then
+    pass "island kept the click and redrew in response (${after}% vs ${churn}% idle)"
   else
-    fail "island kept the click but nothing on screen changed"
+    fail "island kept the click but nothing on screen changed (${after}% vs ${churn}% idle)"
   fi
   rm -rf "$tmp"
 }

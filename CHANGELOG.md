@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Each agent now shows its own session, and nothing leaks between them.** OpenCode's
+  session poll was sending a `Step`, and only `SessionStart` puts a session's own title
+  on a pill — so a freshly started Coucou showed "OpenCode server" until the next
+  session arrived over SSE. `/session` is newest-first, so the first entry is the
+  session you are actually in, and it is now announced as a `SessionStart` once per
+  change rather than every 10 s. Hermes had no session at all: its gateway has no
+  sessions verb (only `identify` and `status`), so the label comes from
+  `~/.hermes/state.db` via the `sqlite3` client in read-only mode, once every 30 s.
+  Shelling out beats linking SQLite into a binary the hook relay spawns on every
+  Claude Code event; if `sqlite3` or the database is missing the adapter reports no
+  label rather than a wrong one. Verified on screen: Freebuff shows `m-22ff70c712`,
+  Hermes `20261001_1640…`, OpenCode `ses_f03b56ba…`, all three at once, while a
+  Claude hook event lands only on the Claude pill
+- **ui_drive.sh now measures the island's own churn.** With live agents the ticker
+  animates and the pills update every few seconds, so a byte comparison reported a
+  change for a click that never arrived. Both the control and the positive check now
+  take a baseline of how much the island changes while nobody touches it, and compare
+  against it: a click in the transparent margin moves it 0.19 % against a 0.18 %
+  baseline, a real click moves it 40 %. A test that cannot tell "clicked" from
+  "not clicked" is not a test, and this one had quietly stopped being able to
 - **Clicks fell through to the window behind, and pausing made it worse.** The
   click-through test asked GTK where the window is: `Window::outer_position` answered
   y=11 for a window sitting at y=45 — off by the Cinnamon panel — and

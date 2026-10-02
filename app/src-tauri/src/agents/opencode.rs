@@ -22,7 +22,7 @@
 // adapter deliberately has no write path at all.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::mpsc::Sender;
@@ -40,6 +40,8 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 /// Slot for a discovered server URL. Nothing writes it yet — discovery reads
 /// `$OPENCODE_PORT` — so it always falls through to the audited default.
 static BASE_URL: OnceLock<String> = OnceLock::new();
+/// The session id last put on the pill, so a 10 s poll does not re-announce it.
+static LAST_SESSION: Mutex<String> = Mutex::new(String::new());
 
 /// True while the SSE loop is connected — the "healthy" of this adapter.
 pub fn healthy() -> bool {
@@ -279,26 +281,47 @@ async fn handle_event(
 /// Titles for the pills: `/session` is cheap and documented. Fetched on the
 /// session-poll tick, not per event.
 ///
-/// The island shows one pill per agent, not one per session, so this reports the
-/// most recent session only — emitting every session would refill the pill's
-/// step ticker from the top on every 10 s tick.
+/// `/session` is newest-first, so the first entry is the session the user is
+/// actually in. It is announced as `SessionStart` rather than a step: the island
+/// shows one pill per agent, and only `SessionStart` puts a session's own title on
+/// it. That also means a freshly started Coucou shows the session OpenCode is
+/// already in, instead of waiting for the next `session.created` to arrive over
+/// SSE. Re-announcing the same id would reset the pill's step ticker every 10 s, so
+/// the last announced id is remembered.
 async fn poll_sessions(tx: &Sender<AgentEvent>) {
     let Ok(resp) = http_get("/session").await else { return };
-    if let Ok(sessions) = serde_json::from_slice::<serde_json::Value>(&resp) {
-        let Some(latest) = sessions.as_array().and_then(|list| list.first()) else { return };
-        let id = latest.get("id").and_then(|i| i.as_str()).unwrap_or_default();
-        let title = latest
-            .get("title")
-            .and_then(|t| t.as_str())
-            .unwrap_or("OpenCode session");
-        let _ = tx
-            .send(AgentEvent::Step {
-                agent: Agent::Opencode,
-                tool: "session".into(),
-                detail: format!("{title} ({id})"),
-            })
-            .await;
+    let Ok(sessions) = serde_json::from_slice::<serde_json::Value>(&resp) else { return };
+    let Some(latest) = sessions.as_array().and_then(|list| list.first()) else { return };
+    let id = latest.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_string();
+    if id.is_empty() {
+        return;
     }
+    {
+        let Ok(mut last) = LAST_SESSION.lock() else { return };
+        if *last == id {
+            return;
+        }
+        *last = id.clone();
+    }
+    let title = latest
+        .get("title")
+        .and_then(|t| t.as_str())
+        .unwrap_or("OpenCode session")
+        .to_string();
+    let cwd = latest
+        .get("directory")
+        .and_then(|d| d.as_str())
+        .unwrap_or_default()
+        .to_string();
+    log::line(format!("opencode: session {id} — {title}"));
+    let _ = tx
+        .send(AgentEvent::SessionStart {
+            agent: Agent::Opencode,
+            session_id: id,
+            project: title,
+            cwd,
+        })
+        .await;
 }
 
 /// Small helper so the poll paths share one client and base URL.
