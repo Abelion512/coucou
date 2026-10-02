@@ -152,13 +152,12 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
     match target_monitor(app, pref) {
         Some(m) => {
             let scale = m.scale_factor();
-            let p = m.position();
-            let s = m.size();
+            let wa = *m.work_area();
             ScreenInfo {
-                x: p.x as f64 / scale,
-                y: p.y as f64 / scale,
-                width: s.width as f64 / scale,
-                height: s.height as f64 / scale,
+                x: wa.position.x as f64 / scale,
+                y: wa.position.y as f64 / scale,
+                width: wa.size.width as f64 / scale,
+                height: wa.size.height as f64 / scale,
                 scale,
             }
         }
@@ -170,34 +169,40 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
 /// it. GTK's scale factor is unreliable at startup — on a 1.25× display both
 /// `Monitor::scale_factor` and `Window::scale_factor` reported 1.0 — so the webview
 /// measures itself and the correction lands here. See `note_viewport`.
-static VIEWPORT: Mutex<Option<(f64, f64, f64)>> = Mutex::new(None);
+static VIEWPORT: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 
-/// Records the CSS size the webview actually got, alongside the CSS size we asked
-/// for. A mismatch means the window is too small for the island, which is what cut
-/// the 640 px panel off at both edges of a 576 px viewport.
+/// Physical width `apply_geometry` last asked for. Paired with the CSS width the
+/// webview reports, this gives the scale factor without assuming what was requested.
+static LAST_PHYSICAL_W: Mutex<u32> = Mutex::new(0);
+
+/// Records the CSS size the webview actually got.
+///
+/// The scale is derived from *physical ÷ CSS*, never from *requested ÷ CSS*: the
+/// correction itself makes the webview report the size we asked for, so a
+/// requested-based ratio re-reads its own output and slides back to 1.0 on the next
+/// resize — the island clipped itself again after one frame of looking correct.
 pub fn note_viewport(css_w: f64, css_h: f64) {
-    let requested = if CURRENT_COLLAPSED.load(Ordering::Relaxed) {
-        (STRIP_W, STRIP_H)
-    } else {
-        (PANEL_W, PANEL_H)
-    };
-    *VIEWPORT.lock().unwrap() = Some((css_w, css_h, scale_hint(css_w, requested.0)));
+    if css_w <= 0.0 || css_h <= 0.0 {
+        return;
+    }
+    *VIEWPORT.lock().unwrap() = Some((css_w, css_h));
 }
 
-/// The ratio between CSS pixels and physical pixels, learned from what the webview
-/// reported. Falls back to GTK's own idea of the scale factor.
-fn scale_hint(css_w: f64, requested_w: f64) -> f64 {
-    if css_w > 0.0 && requested_w > 0.0 {
-        let ratio = requested_w / css_w;
+/// Physical pixels per CSS pixel, learned from what the window last was and what the
+/// webview says it got. Falls back to GTK's own idea of the scale factor.
+fn scale_hint(win: &WebviewWindow, m: &Monitor) -> f64 {
+    let physical = *LAST_PHYSICAL_W.lock().unwrap();
+    let css = VIEWPORT.lock().unwrap().map(|(w, _)| w).unwrap_or(0.0);
+    if physical > 0 && css > 0.0 {
+        let ratio = physical as f64 / css;
+        // Guard against a transient layout (0 px, or a window mid-resize) rather
+        // than trusting a ratio that cannot be a display scale.
         if (0.25..=4.0).contains(&ratio) {
             return ratio;
         }
     }
-    1.0
+    win.scale_factor().unwrap_or_else(|_| m.scale_factor())
 }
-
-/// Set by `apply_geometry` so `note_viewport` knows which size was last asked for.
-static CURRENT_COLLAPSED: AtomicBool = AtomicBool::new(false);
 
 /// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
 ///
@@ -208,17 +213,19 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
 
-    CURRENT_COLLAPSED.store(collapsed, Ordering::Relaxed);
     let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
 
-    let mp = *m.position();
-    let ms = *m.size();
-    let scale = VIEWPORT
-        .lock()
-        .unwrap()
-        .map(|(_, _, s)| s)
-        .unwrap_or_else(|| win.scale_factor().unwrap_or(m.scale_factor()))
-        .max(0.1);
+    // The work area, not the monitor rect. Every desktop has a panel, and on this
+    // one it is exactly where a notch would be — Cinnamon puts the clock and the
+    // notification centre in the middle of the top edge. Drawn at the monitor's y,
+    // the island sat underneath it: invisible, and its header (the home / chat /
+    // upload / sound / settings buttons) hidden behind the panel. The work area is
+    // the monitor minus whatever the desktop reserves, so the island lands just
+    // below the panel on Cinnamon, GNOME and anything else, with no per-DE config.
+    let wa = *m.work_area();
+    let mp = wa.position;
+    let ms = wa.size;
+    let scale = scale_hint(&win, &m).max(0.1);
     let pw = (lw * scale).round().max(1.0) as u32;
     let ph = (lh * scale).round().max(1.0) as u32;
     let x = mp.x + (ms.width as i32 - pw as i32) / 2;
@@ -227,6 +234,7 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     // Moving across displays can rescale the window: re-assert the physical size.
     let _ = win.set_size(PhysicalSize::new(pw, ph));
+    *LAST_PHYSICAL_W.lock().unwrap() = pw;
     let _ = win.set_always_on_top(true);
 }
 

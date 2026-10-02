@@ -96,8 +96,8 @@ kembali sebagai tambahan — dan saat itu ia harus **kondisional**: muncul hanya
 ketika ada agent yang tidak live, jadi jalur bahagia memakai 0 px.
 
 Kalau ternyata tetap dipertahankan, desainnya sudah siap di
-`app/design-preview/agent-pills.html`: footer kartu kanan, tiga slot fixed
-(OpenCode · Hermes · Freebuff), 24 px.
+footer kartu kanan, tiga slot fixed (OpenCode · Hermes · Freebuff), 24 px.
+(Harness `app/design-preview/` sudah dihapus setelah v1 hidup — lihat §9.)
 
 | State | Dot | Teks |
 |---|---|---|
@@ -137,7 +137,7 @@ kartu detail, tidak ada tombol.
 | `app/src/main.ts` | 1 baris: `registerAgentHandlers(island)` |
 | `app/src/core/state.ts` | `sessionActive` dibuat berlaku untuk agent pill juga (sekarang hanya `integration_claude`), supaya kartu kiri memakai ticker yang sama |
 | `app/src/views/views.ts` | `sourceLabel()` memakai nama platform |
-| `app/src/style.css` | blok `.agent-health` (sudah ada di preview, dipindah) |
+| `app/src/style.css` | blok `.agent-health` — **tidak** jadi: health rowqttunda (§5), jadi tidak ada CSS baru |
 
 Tidak ada test baru: tidak ada guardrail baru, dan `bun run build` +
 `cargo test` yang ada sudah menutup regresi. Bukti manual lewat skenario preview.
@@ -156,8 +156,10 @@ Tidak ada test baru: tidak ada guardrail baru, dan `bun run build` +
 - health row (§5), naikkan tinggi island, divider pills, suara per agent,
   "kenapa mati" detail, pill per session, sorting by state, Rust dedupe/backoff/jitter,
   stub agent di `verify_coucou_linux.sh`.
-- `app/design-preview/` dihapus setelah fitur ini hidup — harness ini hanya cara
-  cheaply melihat UI tanpa Tauri, bukan aset.
+- `app/design-preview/` sudah dihapus (hanya cara cheaply melihat UI tanpa Tauri,
+  bukan aset). **"Kenapa mati" akhirnya hidup di Settings**, bukan di island: section
+  "Agents" di `app/src/settings/main.ts` membaca `agents_status` yang menampilkan
+ ketiga adapter dan endpoint-nya. Di island pill tetap pill — kosong berarti tidak jalan.
 
 ## 10. Keputusan yang sudah diambil
 

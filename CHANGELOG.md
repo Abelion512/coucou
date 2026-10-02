@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- **The island was drawing underneath the desktop panel.** It was placed at the
+  monitor's `y`, which on Cinnamon is exactly where a notch would be — the top edge,
+  where the clock and notification centre live. The island was invisible, and the
+  sliver of it that peeked below the panel hid the header, so home / chat / upload /
+  sound / settings looked like missing buttons. It now positions against the monitor's
+  **work area**, which is the monitor minus whatever the desktop reserves, so it lands
+  just under the panel on Cinnamon, GNOME and anything else without per-DE config.
+  Verified: the five header icons render, and the island opens on hover + click —
+  the tray was only ever a fallback, never the required way in
+- **The viewport correction undid itself.** Deriving the scale factor from
+  *requested ÷ measured* made the webview's second report read the corrected size and
+  slide the factor back to 1.0, re-clipping the island after one frame of looking
+  right. It is now derived from *physical ÷ CSS* — what the window was, against what
+  the webview says it got — which is self-correcting instead of self-defeating
+- **Agent status in Settings.** The three adapters connect, log, and produce a pill
+  only while running — which is correct, and also the only symptom when one is
+  broken. Settings now has an "Agents" section saying which are live, what their
+  loopback address is, and the command to start the ones that are not. Nothing polls
+  there: the settings window is created at startup and never destroyed, so a timer
+  would run forever behind a closed window — it reads once and follows the `agent`
+  event
+- Hermes' gateway reports `platforms.api_server.listener_base` on every 5 s poll and
+  the adapter threw it away, leaving "where is Hermes" answerable only from a comment in
+  a spec. It is kept now, and logged once when it changes. Hermes' and Freebuff's
+  `healthy()` also told the truth about a file rather than about the gateway: Hermes
+  now reports whether the gateway *answered*, Freebuff reuses what its poll already
+  computed instead of re-scanning the directory
+- **auto-ponytail**: `scripts/auto_ponytail.sh` — our own DEBT sweep. Imports nothing,
+  doc paths that do not exist, scripts no doc mentions, deferred markers, and
+  `#[allow(dead_code)]` claims. ~1 s, offline, no dependencies. Its false positives are
+  documented in its own output rather than hidden. On first run it found two docs that
+  lied — `CONTRIBUTING.md` still telling Linux contributors to run `xcodegen` on
+  `NotchBuddy.xcodeproj` and to follow "Swift 6, SwiftUI + AppKit", and a spec pointing
+  at a preview file that no longer exists — both now written correctly
+- `CONTRIBUTING.md` was upstream's macOS document verbatim: xcodegen, NotchBuddy,
+  `StripePoller.swift`, "Swift 6, SwiftUI + AppKit", and a screen-geometry script this
+  fork does not have. Rewritten for this fork's actual build, gates and guardrails
+- Deleted `Agent::id()`, which duplicated what serde already emits, and the dead
+  `AgentSource` trait that had zero implementations. Two comments in `freebuff.rs`
+  promised a `pgrep` and an inotify watcher that were never written; the code polls,
+  and now says so
 - **Three agent pills now exist.** `app/src/island/agents.ts` was never written, so the
   `agent` event Rust emitted had no listener: OpenCode, Hermes and Freebuff connected,
   wrote to the log, and were invisible. Now one pill per agent, appearing only while the

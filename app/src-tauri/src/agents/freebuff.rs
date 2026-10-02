@@ -6,13 +6,13 @@
 //   * `freebuff-relaunch-<pid>.json` — present while a relaunch/update runs;
 //   * `message-history.json` — mtime moves as the conversation grows.
 //
-// So this adapter is pure filesystem watching plus pgrep. Hard rule from the
-// spec: `tokenKey` is a secret. It is read only to notice the file's shape and
-// is never stored, never logged, never emitted — nothing that leaves this
-// module keeps it.
+// So this adapter is pure filesystem polling. Hard rule from the spec: `tokenKey`
+// is a secret. It is parsed with the rest of the file and dropped on the floor —
+// never stored, never logged, never emitted.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::sync::mpsc::Sender;
@@ -20,9 +20,15 @@ use tokio::sync::mpsc::Sender;
 use super::{emit, Agent, AgentEvent, AgentState};
 use crate::log;
 
-/// Poll cadence. The inotify watcher (notify) wakes on changes; the timer only
-/// re-checks expiry and liveness, so an idle desktop costs nothing.
+/// Poll cadence. Five seconds is coarse but the state it produces is coarse too,
+/// and an agent that is merely running does not need to be tracked to the
+/// millisecond.
 const TICK: Duration = Duration::from_secs(5);
+
+/// Whether a live session or a relaunch was seen on the last tick. The poll
+/// already knows this; re-deriving it from `healthy()` meant a second directory
+/// scan and a file read per call, on the main thread.
+static LIVE: AtomicBool = AtomicBool::new(false);
 
 /// One live session as the island sees it.
 #[derive(Clone)]
@@ -156,33 +162,14 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
             last_history_mtime = mtime;
 
             let state = if any_live || relaunching { AgentState::Working } else { AgentState::Idle };
+            LIVE.store(any_live || relaunching, Ordering::Relaxed);
             emit(&app, &AgentEvent::State { agent: Agent::Freebuff, state });
         }
     });
 }
 
-/// Liveness: any `freebuff-live-*.json` not yet expired, or a running binary.
+/// Liveness: a live session or a relaunch was seen on the last poll.
 #[allow(dead_code)]
 pub fn healthy() -> bool {
-    let dir = config_dir();
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with("freebuff-live-") && name.ends_with(".json") {
-                if let Ok(bytes) = std::fs::read(entry.path()) {
-                    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                        let expires = v.get("expiresAt").and_then(|e| e.as_u64()).unwrap_or(0);
-                        if expires == 0 || expires > now_ms {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
+    LIVE.load(Ordering::Relaxed)
 }

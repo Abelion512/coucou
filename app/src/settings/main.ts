@@ -3,7 +3,7 @@
 // integrations land here too in a later stage.
 
 import "./settings.css";
-import { Bridge, onEvent, type HookStatus } from "../core/bridge";
+import { Bridge, onEvent, type AgentStatus, type HookStatus } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
@@ -424,6 +424,86 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
   return h("section", {}, h("h2", {}, h("span", { text: "Integrations" })), note, list);
 }
 
+// ── Agents section ────────────────────────────────────────────────────────────
+
+/** Serde ids. Colours match the pills in the island. */
+const AGENT_META: Record<string, { name: string; color: string; how: string }> = {
+  opencode: { name: "OpenCode", color: "#5D9CFF", how: "opencode serve --port 54321" },
+  hermes: { name: "Hermes", color: "#FFD700", how: "hermes gateway run" },
+  freebuff: { name: "Freebuff", color: "#2DD4BF", how: "run freebuff and send a message" },
+};
+
+/**
+ * The three watched agents.
+ *
+ * The island shows a pill only while an agent is running, so "no pill" is correct
+ * behaviour and also the only symptom when something is broken. This is the one
+ * surface that tells the two apart. Nothing here polls: the window is created at
+ * startup and never destroyed, so a timer would run forever behind a closed window —
+ * it reads once and then follows the `agent` event, deduplicated exactly like the
+ * island does.
+ */
+function agentsSection(initial: AgentStatus[] | null): HTMLElement {
+  const rows = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
+  const note = h("div", { class: "hint" });
+
+  // Adapters re-send the same state every few seconds; redraw only on a change.
+  // The sentinel must not be a possible key: an empty list produces "", and a ""
+  // initial value made the first paint a no-op.
+  let lastKey: string | null = null;
+  const paint = (list: AgentStatus[] | null) => {
+    const key = (list ?? []).map((a) => `${a.agent}:${a.connected}:${a.endpoint ?? ""}`).join("|");
+    if (key === lastKey) return;
+    lastKey = key;
+    clear(rows);
+    note.textContent = "";
+
+    // No list means the command did not answer — `bun run dev` in a plain browser,
+    // or a build without the command. An empty section would read as "nothing is
+    // configured", which is a different and wrong thing to say.
+    if (!list) {
+      rows.append(
+        h("div", {
+          class: "hint",
+          text: "Agent status is unavailable outside the app. Start Coucou to see which agents are running.",
+        }),
+      );
+      return;
+    }
+
+    for (const id of Object.keys(AGENT_META)) {
+      const meta = AGENT_META[id];
+      const s = list.find((x) => x.agent === id);
+      const connected = s?.connected ?? false;
+      const where = s?.endpoint || s?.detail || "";
+      rows.append(
+        h("div", { style: "display:flex;gap:12px;align-items:center" },
+          h("div", { style: "display:flex;align-items:center;gap:8px;min-width:132px" },
+            statusDot(connected),
+            h("i", { class: "dot", style: `background:${meta.color}` }),
+            h("span", { style: "font-size:12.5px", text: meta.name }),
+          ),
+          h("div", { style: "flex:1 1 auto;min-width:0;font-size:12px;color:#8e939c" },
+            h("div", {
+              text: connected ? (where || "connected") : `not running — ${meta.how}`,
+              style: connected ? "" : "color:#6b7079",
+            }),
+          ),
+        ),
+      );
+    }
+    note.textContent = "Each agent gets a pill in the island while it is running. Coucou only watches: it never sends anything to these agents.";
+  };
+
+  paint(initial);
+
+  void onEvent<{ type: string; agent: string }>("agent", () => {
+    void Bridge.agentsStatus().then((s) => paint(s));
+  });
+
+  return h("section", {}, h("h2", {}, h("span", { text: "Agents" })), note, rows);
+}
+
 // ── General section ───────────────────────────────────────────────────────────
 
 function generalSection(): HTMLElement {
@@ -509,6 +589,7 @@ async function main() {
     h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
     claudeSection(status),
     apiSection(hasKey),
+    agentsSection(await Bridge.agentsStatus()),
     integrationsSection(present),
     generalSection(),
     h("div", {

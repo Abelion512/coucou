@@ -111,7 +111,17 @@ export const Bridge = {
    */
   reportViewport: (width: number, height: number) =>
     call<void>("report_viewport", { width, height }),
+
+  /** The three watched agents' liveness, for the settings window. */
+  agentsStatus: () => call<AgentStatus[]>("agents_status"),
 };
+
+export interface AgentStatus {
+  agent: "opencode" | "hermes" | "freebuff" | "claude-code";
+  connected: boolean;
+  endpoint: string | null;
+  detail: string | null;
+}
 
 export interface IntegrationUpdate {
   id: string;

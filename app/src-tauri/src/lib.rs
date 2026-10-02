@@ -294,6 +294,16 @@ async fn refresh_integration(app: AppHandle, id: String) {
     integrations::poll_once(app, &id).await;
 }
 
+/// The three agents' liveness, for the settings window.
+///
+/// The island deliberately shows nothing for an agent that is down — a permanent
+/// empty pill would be noise. Settings is where "why is it missing?" belongs, so
+/// this is the one surface that answers it.
+#[tauri::command]
+fn agents_status() -> Vec<agents::AgentStatus> {
+    agents::status()
+}
+
 /// Lets the island write to the same log as the Rust side.
 #[tauri::command]
 fn log_line(message: String) {
@@ -481,6 +491,7 @@ pub fn run() {
             secret_set,
             secret_clear,
             refresh_integration,
+            agents_status,
             open_n8n,
             open_settings_window,
             set_paused,

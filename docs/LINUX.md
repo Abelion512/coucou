@@ -37,6 +37,30 @@ bun run tauri build   # menghasilkan .deb + AppImage
 ./scripts/verify_coucou_linux.sh --no-build
 ```
 
+## auto-ponytail — DEBT sweep
+
+```bash
+./scripts/auto_ponytail.sh            # tulis docs/auto-ponytail.md, cetak ringkasan
+./scripts/auto_ponytail.sh --quiet    # ringkasan saja
+```
+
+Snapshotberkas yang **kode** dan **repo** bisa buktikan sendiri,without network dan
+dalam ~1 detik: modulyangtidak di-import, path di docs yangtidak ada, skrip yang
+tidak disebut siapa pun, marker TODO/FIXME, dan klaim `#[allow(dead_code)]`.
+
+Yang **tidak** dicek, dan alasannya: apakah aplikasinya jalan (itu
+`verify_coucou_linux.sh`, yang melakukan probe live dan melapor PASS/FAIL/SKIP),
+status sync upstream (itu `sync_upstream.sh --check`), apa pun yang butuh jaringan,
+dan penilaian rasa — "ini akan lebih bagus" adalah taste, dan skrip yang Issue taste
+adalah skrip yang pendapatnya bertahan lebih lama dari gunanya.
+
+False positive diketahui dan ditulis di output, bukan disembunyikan: check "modul
+yang tidak di-import" bisa salah pada entry point dan modul yang hanya/rujukan dari
+HTML, dan check "path docs" **akan** memunculkan path yang memang sengaja dihapus
+(`NotchBuddy/`, `windows/`) — itu bukan temuan, itu bukti bahwa check-nya bekerja.
+
+Report-nya di-gitignore: dia dibuat ulang setiap kali dijalankan.
+
 ## Sinkronisasi upstream (yang penting)
 
 **Policy: merge, jangan rebase.** Rebase menulis-ulang history bersama dan membuat
@@ -139,11 +163,36 @@ ia tampil.
 Cara cek cepat: `top -p $(pgrep -f coucou)` saat island dalam keadaan compact/hidden —
 CPU harus ~0.
 
+### Ukuran jendela island
+
+Panel adalah 720×320 **CSS px**, dan front end menata diri terhadap angka itu. Dua
+hal harus benar supaya tidak terpotong:
+
+- **Jendela mengikuti area kerja, bukan layar penuh.** Cinnamon menaruh jam dan
+  notification centre di tengah atas — persis di tempat notch macOS. Kalau island
+  digambar di `y` monitor, ia tenggelam di balik panel, dan bagian paling atas
+  (header: home / chat / upload / sound / settings) tidak pernah terlihat.
+  `Monitor::work_area()` sudah dikurangi panel oleh WM, jadi ini berlaku untuk
+  Cinnamon, GNOME dan apa pun tanpa konfigurasi per-DE.
+- **Skala diambil dari webview, bukan dari GTK.** Pada display 1.25×,
+  `Monitor::scale_factor` dan `Window::scale_factor` sama-sama melaporkan 1.0, jadi
+  panel 720 px menjadi viewport 576 px dan island 640 px kehilangan 64 px di kedua
+  sisi. Webview mengukur dirinya sendiri (`Bridge.reportViewport`) dan Rasio
+  dihitung sebagai **px fisik ÷ px CSS** — bukan "yang diminta ÷ yang diukur",
+  karena koreksi itu membuat laporan kedua membaca keluarannya sendiri dan
+  mengembalikan faktor ke 1.0.
+
+### Membuka island
+
+Tidak perlu tray sama sekali. Arahkan kursor ke **tepi atas tengah** — island
+muncul sebagai bar kecil (288×32), lalu **klik** untuk membuka. Tray ("Open
+Coucou") tetap ada sebagai jalan lain, bukan syarat.
+
 ## Yang masih tertunda
 
-- **Health row** untuk agent: kenapa satu agent mati (`api_server down`, socket
-  hilang). Diseño + alasannya ada di §5 `SPEC-agent-pills.md`; ditunda karena
-  v1 = pill saja, dan detailnya sudah ada di log.
+- **Health row di island**: kenapa satu agent mati (`api_server down`, socket
+  hilang). Sudah hidup di Settings sebagai section "Agents" — di island tetap pill
+  saja, karena island punya 108 px area view dan pill kosong akan jadi kebohongan.
 - **Stub agent di verify script**: §4/5/6 masih SKIP tanpa agent asli; stub socket +
   stub SSE akan mengubahnya jadi PASS.
 - **Cursor di Wayland**: upstream sekarang menangani ini (portalingan Wayland-nya

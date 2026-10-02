@@ -15,6 +15,8 @@
 // its own approval flow (`tools/approval.py`) — Coucou only watches, it never
 // sends decisions, so this adapter has no write path at all.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tokio::sync::mpsc::Sender;
@@ -24,6 +26,22 @@ use crate::log;
 
 const POLL: Duration = Duration::from_secs(5);
 const TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Whether the gateway actually answered on the last poll. The socket file alone
+/// is not liveness: a crashed gateway leaves it behind, and `Path::exists` would
+/// report a dead gateway as healthy.
+static RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// The API server address the gateway reports, kept because it is the only place
+/// it is ever known. The status payload carries `platforms.api_server.listener_base`
+/// every 5 s and it used to be dropped on the floor, leaving "where is Hermes"
+/// answerable only from a comment in a spec.
+static API_BASE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Where Hermes serves HTTP, if the gateway said so.
+pub fn api_base() -> Option<String> {
+    API_BASE.lock().ok().and_then(|v| v.clone())
+}
 
 fn socket_path() -> String {
     let home = std::env::var_os("HOME")
@@ -46,6 +64,7 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                         was_up = true;
                         log::line("hermes: gateway online");
                     }
+                    RUNNING.store(true, Ordering::Relaxed);
                     report(app.clone(), &tx, reply).await;
                 }
                 None => {
@@ -53,6 +72,7 @@ pub fn start(app: tauri::AppHandle, tx: Sender<AgentEvent>) {
                         was_up = false;
                         log::line("hermes: gateway offline");
                     }
+                    RUNNING.store(false, Ordering::Relaxed);
                     let _ = tx
                         .send(AgentEvent::State { agent: Agent::Hermes, state: AgentState::Unavailable })
                         .await;
@@ -135,6 +155,19 @@ async fn report(
 
     // Platform health: a non-connected api_server is the error the island shows.
     if let Some(platforms) = result.get("platforms").and_then(|p| p.as_object()) {
+        // The address is the only way to reach Hermes over HTTP; keep it.
+        if let Some(base) = platforms
+            .get("api_server")
+            .and_then(|a| a.get("listener_base"))
+            .and_then(|b| b.as_str())
+        {
+            if let Ok(mut slot) = API_BASE.lock() {
+                if slot.as_deref() != Some(base) {
+                    log::line(format!("hermes: api server at {base}"));
+                }
+                *slot = Some(base.to_string());
+            }
+        }
         for (name, info) in platforms {
             let pstate = info.get("state").and_then(|s| s.as_str()).unwrap_or("");
             if pstate != "connected" {
@@ -158,8 +191,7 @@ async fn report(
     emit(&app, &AgentEvent::State { agent: Agent::Hermes, state });
 }
 
-/// Liveness: the socket file exists. Cheap, used by the overview health line.
-#[allow(dead_code)]
+/// Liveness: the gateway answered on the last poll, not merely "the file is there".
 pub fn healthy() -> bool {
-    std::path::Path::new(&socket_path()).exists()
+    RUNNING.load(Ordering::Relaxed)
 }

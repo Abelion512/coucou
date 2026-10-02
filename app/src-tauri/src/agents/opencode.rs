@@ -37,11 +37,11 @@ const IDLE_AFTER: Duration = Duration::from_secs(30);
 const POLL_SESSIONS: Duration = Duration::from_secs(10);
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+/// Slot for a discovered server URL. Nothing writes it yet — discovery reads
+/// `$OPENCODE_PORT` — so it always falls through to the audited default.
 static BASE_URL: OnceLock<String> = OnceLock::new();
 
 /// True while the SSE loop is connected — the "healthy" of this adapter.
-/// Surfaced in the overview's health line once the front end grows the row.
-#[allow(dead_code)]
 pub fn healthy() -> bool {
     RUNNING.load(Ordering::Relaxed)
 }
@@ -60,6 +60,11 @@ fn base_url() -> String {
         .get()
         .cloned()
         .unwrap_or_else(|| format!("http://127.0.0.1:{}", discovery_port()))
+}
+
+/// The loopback address this adapter talks to, for the settings health line.
+pub fn endpoint() -> String {
+    base_url()
 }
 
 fn discovery_port() -> u16 {
