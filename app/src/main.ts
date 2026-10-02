@@ -5,6 +5,7 @@ import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, type Settings } from "./core/state";
 import { Island } from "./island/island";
+import { registerAgentHandlers } from "./island/agents";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
 
@@ -52,6 +53,14 @@ async function main() {
 
   await onEvent<null>("screen-changed", () => void Bridge.reposition());
 
+  // The webview is the only party that knows the real scale factor, so it tells
+  // Rust how many CSS pixels it actually got. Without this the window is sized
+  // from GTK's guess and the island is clipped on a scaled display.
+  const reportViewport = () =>
+    void Bridge.reportViewport(window.innerWidth, window.innerHeight);
+  reportViewport();
+  window.addEventListener("resize", reportViewport);
+
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
     State.settings = { ...State.settings, ...s };
@@ -62,6 +71,8 @@ async function main() {
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);
+  // OpenCode, Hermes, Freebuff — Rust funnels them through the `agent` event.
+  registerAgentHandlers();
 
   island.launch();
 

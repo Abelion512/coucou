@@ -44,13 +44,16 @@ function arr(id: string, key: string): Record<string, unknown>[] {
 
 // ── Not configured / idle ─────────────────────────────────────────────────────
 
+// Where the button sends you: the page the missing key is created on, not the
+// product's front page. "Key not configured" is a dead end unless the link lands
+// on the API-key screen itself.
 const OPEN_URLS: Record<string, string> = {
-  integration_resend: "https://resend.com/emails",
-  integration_vercel: "https://vercel.com/dashboard",
-  integration_github: "https://github.com",
-  integration_stripe: "https://dashboard.stripe.com/payments",
-  integration_notion: "https://notion.so",
-  integration_calcom: "https://app.cal.com/bookings",
+  integration_resend: "https://resend.com/api-keys",
+  integration_vercel: "https://vercel.com/account/tokens",
+  integration_github: "https://github.com/settings/tokens",
+  integration_stripe: "https://dashboard.stripe.com/apikeys",
+  integration_notion: "https://www.notion.so/my-integrations",
+  integration_calcom: "https://app.cal.com/api-keys",
 };
 
 function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
@@ -87,7 +90,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
       h("button", {
         class: "link-btn",
         style: `color:${task.color}d9`,
-        text: `Open ${task.name}`,
+        text: `Get ${task.name} key`,
         onclick: () => void Bridge.openUrl(OPEN_URLS[task.id]),
       }),
     );

@@ -101,7 +101,23 @@ checklist 🔶 seperti biasa.
   guard 107-byte + fallback `/tmp/coucou-<uid>.sock`), `SO_PEERCRED`, ceiling 32 koneksi, timeout 5 s.
 - `app/src-tauri/src/agents/` — AgentBus + adapter OpenCode (SSE), Hermes (`gateway.sock`),
   Freebuff/Codebuff (file-watch `~/.config/manicode/`). Observe-only; hanya Claude-Code punya `PermissionReq`.
+- `app/src/island/agents.ts` — ujung yang lain dari event `agent`: memetakan
+  `AgentEvent` Rust ke pill di island. Tanpa file ini ketiga adapter tetap jalan,
+  tetap nulis ke log, dan tidak terlihat sama sekali.
 - `app/hook/src/unix.rs` — relay `coucou-hook`: ENOENT → exit 0 instan (Claude Code tak pernah diblokir).
+
+### Ukuran jendela island
+
+Panel adalah 720×320 **CSS px**, dan front end menata diri terhadap angka itu. GTK
+tidak bisa dipercaya melaporkan scale factor saat startup — pada display 1.25×
+`Monitor::scale_factor` dan `Window::scale_factor` sama-sama bilang 1.0 — sehingga
+jendela pernah digambar 720 px fisik, WebKit membaginya 1.25, dan island 640 px
+terpotong di kedua sisi.
+
+Jadi webview mengukur dirinya sendiri (`Bridge.reportViewport`) dan memberitahu Rust
+seberapa px CSS yang benar-benar dia dapat; Rust memakai rasio itu untuk memperbesar
+jendelanya. WebKit adalah satu-satunya pihak yang tahu scale factor yang sebenarnya,
+karena dia yang membagi px fisik menjadi px CSS.
 
 ## Performa
 
@@ -125,14 +141,11 @@ CPU harus ~0.
 
 ## Yang masih tertunda
 
-- **Agent pills** (OpenCode/Hermes/Freebuff tampil sebagai pill di island): desainnya
-  sudah matang di [`SPEC-agent-pills.md`](SPEC-agent-pills.md), sengaja belum
-  dikerjakan. Ringkasnya: event `agent` sudah sampai ke front end lewat
-  `agents::emit`, tapi belum ada yang membaca — `app/src/island/agents.ts`-nya belum ada.
+- **Health row** untuk agent: kenapa satu agent mati (`api_server down`, socket
+  hilang). Diseño + alasannya ada di §5 `SPEC-agent-pills.md`; ditunda karena
+  v1 = pill saja, dan detailnya sudah ada di log.
 - **Stub agent di verify script**: §4/5/6 masih SKIP tanpa agent asli; stub socket +
   stub SSE akan mengubahnya jadi PASS.
-- **Dedupe state adapter**: Hermes mengirim `Unavailable` tiap poll 5 detik selama
-  offline; island harus mengabaikannya kalau state tidak berubah.
 - **Cursor di Wayland**: upstream sekarang menangani ini (portalingan Wayland-nya
   ada di `windows/src-tauri/src/platform/linux.rs` mereka, yang tidak kita ambil).
   Intinya: Wayland tidak memberi posisi kursor global, jadi Mochi harus mengambilnya
@@ -140,6 +153,53 @@ CPU harus ~0.
   (`boot.cursorPoll`) — bukan perubahan front-end saja.
 - **Paket CI**: `.rpm` + release `linux-latest` + upload artifact manual (upstream
   punya, kita belum; skip sampai ada yang butuh).
+
+## Cara pakai (pertanyaan yang paling sering muncul)
+
+### Apakah harus jalan dulu, atau bisa langsung dipakai?
+
+**Coucou bisa langsung dipakai** — tidak ada agent yang harus dijalankan lebih dulu.
+App-nya langsung boot,>(), dan Claude Code langsung terhubung begitu hook-nya terpasang.
+
+Agent tambahan **t sensed**: pill OpenCode/Hermes/Freebuff **muncul hanya kalau agent
+itu benar-benar jalan**. Kalau tidak, tidak ada pill sama sekali — bukan placeholder,
+baris kosong, atau "not running". Ini disengaja (lihat §5 `SPEC-agent-pills.md`):
+pill yang selalu ada membuat island berbohong tentang apa yang sedang terjadi.
+
+Jadi urutannya: **install → pakai Coucou → kalau mau lihat agent lain, nyalakan agent
+itu.** Tidak ada langkah urutan lain.
+
+### Claude Code
+
+```bash
+# 1. Buka Settings dari tray Coucou → bagian Hooks
+# 2. Klik "Preview" — Coucou menampilkan diff lebih dulu
+# 3. Klik "Install" (menulis ~/.claude/settings.json, dengan backup bertanggal)
+```
+
+Alternatif manual: `~/.local/share/coucou/bin/coucou-hook <EventName>`.
+
+### Tiga agent tambahan
+
+| Agent | Yang perlu jalan |ockup cara cek |
+|---|---|---|
+| OpenCode | `opencode serve --port 54321` | `curl -s localhost:54321/global/health` |
+| Hermes | `hermes gateway run` | `ls ~/.hermes/gateway.sock` |
+| Freebuff/Codebuff | CLI-nya dijalankan sekali | `ls ~/.config/manicode/freebuff-live-*.json` |
+
+Setelah itu pill-nya muncul tanpa restart Coucou — adapter reconnect sendiri dengan
+backoff 1s→30s.
+
+### Kalau pill tidak muncul
+
+Bedakan "tidak jalan" vs "jalan tapi tidak ada UI" dari log:
+
+```bash
+grep -E "hermes:|opencode:|freebuff:" ~/.local/share/coucou/coucou.log | tail
+```
+
+`hermes: gateway online` + pill tidak muncul = bug. `gateway offline` = Hermes-nya
+memang belum jalan.
 
 ## Tes e2e di laptop (3 agent)
 
@@ -163,11 +223,8 @@ harus ada pesan yang benar-benar terkirim (butuh kuota, jadi `0/25 Freebucks`
 belum tentu cukup).
 
 Lalu jalankan `./scripts/verify_coucou_linux.sh --no-build`: §4/5/6 berubah dari SKIP
-ke PASS begitu tiga hal di atas hidup. Event-nya masuk lewat `agents::emit("agent")`;
-tanpa `app/src/island/agents.ts` pills-nya belum tampil — itu memang dikerjakan
-manual, lihat [`SPEC-agent-pills.md`](SPEC-agent-pills.md). Log adapter ada di
-`$XDG_DATA_HOME/coucou/coucou.log` (`hermes: gateway offline`, `opencode: …`), jadi
-"tidak jalan" vs "jalan tapi tidak ada UI" bisa dibedakan dari situ.
+ke PASS begitu tiga hal di atas hidup. Event-nya masuk lewat `agents::emit("agent")` dan
+diterima `app/src/island/agents.ts`, yang memetakannya ke pill di island.
 
 ### Dua jebakan yang sudah pernah menipu
 

@@ -1,8 +1,14 @@
 # SPEC — Agent pills + adapter health line
 
-Status: **design, belum diimplementasikan**. Ditulis sebelum eksekusi supaya tidak
-membangun sesuatu yang ternyata tidak kepakai. Prinsip: ponytail (rung 1–7) — tidak
-ada kode untuk kebutuhan yang belum terbukti, dan tidak ada fitur spekulatif.
+Status: **v1 (pill) sudah diimplementasikan** di `app/src/island/agents.ts`;
+health row (§5) masih ditunda. Ditulis sebelum eksekusi supaya tidak membangun
+sesuatu yang ternyata tidak kepakai. Prinsip: ponytail (rung 1–7) — tidak ada kode
+untuk kebutuhan yang belum terbukti, dan tidak ada fitur spekulatif.
+
+> Catatan implementasi: pada display berskala, island sempat terpotong di kedua sisi
+> karena jendela digambar memakai px fisik sementara front end menata diri terhadap
+> 720×320 **CSS px**. Fix-nya di `Bridge.reportViewport` + `island::apply_geometry`,
+> bukan di spec ini — lihat `docs/LINUX.md` § Ukuran jendela island.
 
 Pasangan spec: [`SPEC-linux-mult-agent.md`](SPEC-linux-mult-agent.md) (audit + adapter),
 [`AGENTS.md`](../AGENTS.md) (guardrail), preview `/design-preview/agent-pills.html`.

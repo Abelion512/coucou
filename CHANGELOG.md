@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Three agent pills now exist.** `app/src/island/agents.ts` was never written, so the
+  `agent` event Rust emitted had no listener: OpenCode, Hermes and Freebuff connected,
+  wrote to the log, and were invisible. Now one pill per agent, appearing only while the
+  agent is actually running, and disappearing when it stops. Observed live — the pills
+  show up within a second of the adapters connecting
+- **The island was clipped on scaled displays.** The window was sized in physical pixels
+  from GTK's reported scale factor, but on a 1.25× display both `Monitor::scale_factor`
+  and `Window::scale_factor` reported 1.0, so the 720 px panel became a 576 px viewport
+  and the 640 px island lost 64 px off both edges. The webview now reports the CSS size
+  it actually got (`reportViewport`) and Rust sizes the window from that — WebKit is the
+  only party that knows the real factor, because it is the one dividing pixels
+- **Sounds were silent in the AppImage only.** It bundles `libgstreamer` but none of its
+  plugins, so WebKitGTK logged "GStreamer element autoaudiosink not found" and the 28
+  sounds never played — while dev was fine, which is why this hid. The AppImage now points
+  at the system's plugins (and keeps its own registry file, since it is remounted at a new
+  path every launch). Covered by a test
+- Integration buttons now link straight to each platform's API-key page instead of its
+  front page — "Key not configured" was a dead end otherwise. The tray item reads
+  **Settings** (matching the menu) rather than "Settings…"
+- OpenCode's session poll reported every session, refilling the pill's ticker from the top
+  every 10 s. It now reports the most recent one, which is all a one-pill-per-agent design
+  can show
 - The e2e harness was reporting passes it had not earned. Three of the ten checks
   could go green while verifying nothing, and one was simply broken:
   - **§5 was a real FAIL.** `socket_send`'s python branch sent the payload raw while
@@ -23,9 +45,6 @@
   - Deleted a provably dead line in §7: `grep -q` emits no stdout, so piping it into
     `grep -vq '^Binary'` could never take the branch. The real leak check beside it
     still fires (verified with a seeded `tokenKey`)
-- `docs/LINUX.md` documents how to test the three agents end to end on a laptop
-  (what each needs running) and what is deliberately still pending
-
 - Upstream merged (9 commits). Upstream now ports Linux inside its own `windows/`
   tree — a Unix-socket relay, a `platform/` module with a gtk-layer-shell layer and
   its own `linux.yml` — so the merge paired those files with our `app/` paths by
@@ -41,6 +60,14 @@
 - `AGENTS.md`/`CLAUDE.md` now say how to commit: batch by intent, a commit is worth
   making for a fix, a deletion or a finished change — never for a typo, and land it
   yourself instead of asking the user to pull
+- `docs/LINUX.md` documents how to test the three agents end to end on a laptop
+  (what each needs running) and what is deliberately still pending, plus the answer to the
+  question that comes up first: nothing has to be started before using Coucou, and the
+  extra pills only exist while their agent is running
+- `docs/SPEC-linux-mult-agent.md` no longer describes a machine that isn't this one, and
+  its paths point at `app/` rather than the deleted `windows/` tree; §6 verification is
+  the `./scripts/verify_coucou_linux.sh` that actually exists instead of a hand-typed
+  command list that had drifted into nonsense
 
 - Frame loop no longer writes DOM styles it already wrote: `applyGeometry()` and
   `updateBotTargets()` memoise their last values, and the drop-canvas class toggles

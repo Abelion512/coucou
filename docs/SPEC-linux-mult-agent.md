@@ -1,28 +1,33 @@
-# SPEC: Coucou Multi-Agent — Rust/Tauri Linux Port + 3 Adapter Baru
+# SPEC: Coucou Multi-Agent — Rust/Tauri Linux + 3 Adapter Baru
 
-> Hasil audit live mesin Abelion (2026-10-01). Dikirim ke agent coding di cloud
-> sebagai dasar implementasi. Sumber asli: audit VERIFIED pada mesin
-> `abelion@mint223`, transkrip di cache Hermes lokal.
+> Ditulis di mesin kerja lokal (Linux Mint, X11). Angka di §1 berasal dari audit
+> live di mesin itu sendiri; jalankan ulang `./scripts/verify_coucou_linux.sh` kalau
+>_infonya sudah berbeda.
 
-**Dasar:** adopsi `Louis-CFM/coucou`. Semua fitur bawaan Coucou (Mochi UI,
-Claude-Code monitoring, permission approve/deny, 28 sounds, animations,
-integrations) **dipertahankan apa adanya**. Yang ditambahkan hanya:
+**Dasar:** adopsi `Louis-CFM/coucou`, **tidak rewrite dari nol**. Semua yang sudah
+bisa jalan (Mochi UI, Claude-Code monitoring, permission approve/deny, 28 sounds,
+animations, integrasi) dipakai apa adanya. Yang ditambahkan hanya:
 
-1. **Port Tauri Windows → Linux native**
-2. **3 adapter agent baru**: opencode, freebuff/codebuff, hermes
+1. **Dukungan Rust untuk Linux** — Swift hanya compile di Android/macOS, jadi tidak
+   bisa jadi backend Linux sama sekali; Rust/Tauri yang Brigades cross-platform.
+2. **3 adapter agent baru**: OpenCode, Freebuff/Codebuff, Hermes.
 
-**Tidak ada perubahan** ke macOS Swift. Tidak ada rewrite dari nol.
+Tidak ada perubahan ke upstream. Yang "disesuaikan" hanya bagian yang tidak punya
+padanan di Linux (mis. Win32 socket → Unix socket).
 
 ---
 
-## 1. Fakta Audit (VERIFIED di mesin ini, 2026-10-01)
+## 1. Fakta Audit (VERIFIED di mesin kerja lokal ini)
 
-### 1.1 Claude-Code — bawaan Coucou, TIDAK diubah
-Coucou sudah punya `nb-hook` (Python relay) → Unix socket `nb.sock` → `HookServer.swift`.
-Event: SessionStart, SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse,
-PostToolUseFailure, PermissionRequest, Notification, Stop, StopFailure,
-SubagentStart, SubagentStop.
-Timeout 10s, PermissionRequest 120s (hold FD sampai user jawab).
+### 1.1 Claude Code — bawaan Coucou, tetap ada (disesuaikan seperlunya)
+Di Linux, relay-nya `coucou-hook` (Rust, `app/hook/`) → Unix socket
+`$XDG_RUNTIME_DIR/coucou/coucou.sock`. Event: SessionStart, SessionEnd,
+UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest,
+Notification, Stop, StopFailure, SubagentStart, SubagentStop.
+
+Budget waktu (dari `app/hook/src/main.rs`): connect 300 ms, fire-and-forget 2 s,
+PermissionRequest 110 s. Angka 110 s ini yang membuat Claude Code tidak pernah
+freeze — lewat atau tidak dijawab, terminal mengambil alih.
 
 ### 1.2 OpenCode 1.18.34 — **adapter paling bersih**
 ```bash
@@ -84,50 +89,54 @@ State file runtime (VERIFIED):
 ## 2. Arsitektur
 
 ```
-Claude-Code ──nb-hook.py──▶ Unix socket ──┐
+Claude Code ──coucou-hook──▶ Unix socket ──┐
                                         │
 OpenCode ────GET /event (SSE)────────────┤
-                                        ├──▶ AgentBus (Rust) ──▶ Mochi UI
-Hermes ─────gateway.sock (JSON verbs)────┤
-                                        │
-Freebuff/Codebuff ──file-watch + pgrep────┘
+                                        ├──▶ AgentBus (Rust) ──┐
+Hermes ─────gateway.sock (JSON verbs)────┤                      │
+                                        │                      ▼
+Freebuff/Codebuff ──file-watch + pgrep────┘            island ("agent" event)
+                                                               │
+                                                               ▼
+                                                        pills + Mochi
 ```
 
-### 2.1 Yang REUSE dari Coucou Windows port
+### 2.1 Yang DIPAKAI dari Coucou (path sekarang — `windows/` sudah dihapus)
 | File | Aksi |
 |---|---|
-| `windows/src-tauri/src/island.rs` | **REWRITE** — Win32 calls → Tauri WebviewWindow API (Linux: X11) |
-| `windows/src-tauri/src/win_user.rs` | **HAPUS** — Win32 SID check → Unix uid check via socket perms |
-| `windows/src-tauri/src/hooks.rs` | **PORT** — named pipe → Unix socket, path dari $XDG_RUNTIME_DIR |
-| `windows/src-tauri/tauri.conf.json` | **GANTI** — `targets: ["nsis"]` → `["deb", "appimage"]` |
-| `windows/src-tauri/src/lib.rs`, `settings.rs`, `claude.rs`, `integrations.rs` | **PORT** — platform-agnostic, hampir tanpa ubah |
-| `windows/src/**` (TypeScript, Canvas 2D Mochi) | **REUSE** — canvas 2D sudah cross-platform |
-| `windows/src-tauri/Cargo.toml` | **GANTI** — hapus `windows` crate, ganti feature `keyring` |
-| `windows/hook/src/main.rs` | **PORT** — pipe path → socket path, `win.rs` → `unix.rs` (SO_PEERCRED) |
+| `app/src-tauri/src/island/` | **REWRITE** — Win32 calls → Tauri WebviewWindow API; call yang butuh X11 ada di `unix.rs` |
+| `app/src-tauri/src/hooks.rs` | **PORT** — named pipe → Unix socket, path dari $XDG_RUNTIME_DIR |
+| `app/src-tauri/tauri.conf.json` | **GANTI** — `targets: ["nsis"]` → `["deb", "appimage"]` |
+| `app/src-tauri/src/lib.rs`, `settings.rs`, `claude.rs`, `integrations.rs` | **PORT** — platform-agnostic, hampir tanpa ubah |
+| `app/src/**` (TypeScript, Canvas 2D Mochi) | **REUSE** — canvas 2D sudah cross-platform |
+| `app/hook/src/main.rs` | **PORT** — pipe path → socket path, `win.rs` → `unix.rs` (SO_PEERCRED) |
 
 ### 2.2 Yang BARU
 ```
-windows/src-tauri/src/agents/
-  mod.rs          — trait AgentSource { fn events() -> Receiver<AgentEvent>; fn healthy() -> bool }
-  claude.rs       — Claude-Code (eksisting hooks.rs, dibungkus trait)
-  opencode.rs     — SSE client ke GET /event
-  hermes.rs       — Unix socket client, poll verb "status" tiap N detik
-  freebuff.rs     — file-watch ~/.config/manicode/*.json + pgrep
+app/src-tauri/src/agents/
+  mod.rs        — AgentBus + enum AgentEvent/Agent/AgentState
+  opencode.rs   — SSE client ke GET /event
+  hermes.rs     — Unix socket client, poll verb "status" tiap N detik
+  freebuff.rs   — file-watch ~/.config/manicode/*.json + pgrep
+app/src/island/agents.ts   — ujung event "agent": AgentEvent → pill di island
 ```
 
-**`AgentEvent` (enum baru):**
+Tidak ada `claude.rs` di sini: Claude Code bukan adapter. Event-nya datang lewat
+relay hook yang sudah ada, dan language-nya sendiri.
+
+**`AgentEvent` (enum di `agents/mod.rs`):**
 ```rust
 enum AgentEvent {
     SessionStart  { agent, session_id, project, cwd },
     Step          { agent, tool, detail },      // "Read · foo.ts", "Edit · bar.py"
-    State         { agent, state },             // Idle|Working|Blocked|Done|Error
-    Notification  { crossref UI: Vue-Kanban, focus 1 slot }  // rate-limit, question
-    Finish        { agent, message },
-    PermissionReq { agent, session_id, tool, command, fd },  // HANYA claude-code
+    State         { agent, state },             // Idle|Working|Blocked|Done|Error|Unavailable
+    Notification  { agent, kind, message },     // rate-limit, platform health
+    Finish        { agent, session_id, message },
+    PermissionReq { agent, session_id, tool, command, request_id },  // HANYA Claude Code
 }
 ```
 
-Ini yang bikin Coucou jadi multi-agent: `HookServer` push ke `AgentBus`, bukan
+Ini yang bikin Coucou jadi multi-agent: adapter push ke `AgentBus`, bukan
 langsung `AppState`. `AppState` jadi **per-agent task**.
 
 ---
@@ -184,7 +193,7 @@ langsung `AppState`. `AppState` jadi **per-agent task**.
 
 ##  table-displacement 5. Guardrail (WAJIB — Coucou already punya, pertahankan)
 
-Dari `windows/hook/src/main.rs` doc comment, **jangan dilanggar**:
+Dari `app/hook/src/main.rs` doc comment, **jangan dilanggar**:
 1. **Jangan pernah block Claude Code.** Kalau app mati → hook `exit 0` instan, tidak ada stdout.
 2. Hook punya deadline: `CONNECT_TIMEOUT 300ms`, `FIRE_AND_FORGET_BUDGET 2s`, `DECISION_BUDGET 110s`.
 3. Field yang di-drop: `tool_response`, `transcript_path` (bisa isi file penuh). `MAX_FIELD_LEN 2000`.
@@ -200,60 +209,74 @@ Dari `windows/hook/src/main.rs` doc comment, **jangan dilanggar**:
 
 ---
 
-## 6. Verifikasi (wajib dijalankan)
+## 6. Verifikasi
+
+Semua cek ini sudah diotomatisasi — jalankan satu perintah, bukan daftar manual:
 
 ```bash
-# 1. Build
-cd windows/src-tauri && cargo build --release  # atau --target x86_64-unknown-linux-gnu
+./scripts/verify_coucou_linux.sh              # build + semua cek §6
+./scripts/verify_coucou_linux.sh --no-build   # kalau sudah ada binarynya
+```
 
-# 2. Socket hook jalan
-ls -la $XDG_RUNTIME_DIR/coucou/coucou.sock
+Script mencetak PASS/FAIL/SKIP per cek dan keluar dengan ringkasan di akhir. SKIP
+adalah kondisi yang memang butuh campur tangan (mis. Freebuff belum dijalankan),
+bukan cek yang lolos diam-diam.
 
-# 3. Claude Code tidak terblokir saat Coucou mati
-#    Jalankan claude, pastikan tidak freeze
+Manual, kalau mau melihat apa yang sebenarnya dicek:
 
-#  implementing-guide 4. Hook tidak mengubah settings.json user tanpa backup
+```bash
+# hook relay hidup
+ls -la "$XDG_RUNTIME_DIR/coucou/coucou.sock"
+
+# Coucou mati → Claude Code tidak boleh tertahan (jalankan claude, pastikan tidak freeze)
+
+# hook install tidak menimpa settings.json tanpa backup
 ls ~/.claude/settings.json.bak-*
 
-# 5. Tiap adapter bisa connect
-curl -s http://127.0.0. Convolution:1:54321/global/health          # opencode (pastikan opencode serve jalan dulu)
-printf '{"verb":"status"}\n' | nc -U ~/.hermes/gateway.sock  # hermes
-# Atau alternatif: echo '{"verb":"status"}\n' | socat - UNIX-CONNECT:~/.hermes/gateway.sock
-ls ~/.config/manicode/freebuff-live-*.json              # freebuff
+# tiap adapter bisa connect
+curl -s http://127.0.0.1:54321/global/health                 # opencode
+printf '{"verb":"status"}\n' | nc -U ~/.hermes/gateway.sock # hermes
+ls ~/.config/manicode/freebuff-live-*.json                   # freebuff
 
-# 6. Tidak ada secret di binary/log
-strings target/release/cformat!(".6f") | grep -i "ninerouter_key\|target/release/coucou"   # harus kosong
-grep -ri "tokenKey" ~/.local/share/coucou/                          # check
-
-# 7. Wayland-safe
-XDG_SESSION_TYPE=wayland ./target/release/cf.6f
+# tidak ada secret di binary atau di disk
+strings app/target/release/coucou | grep -i tokenKey   # harus kosong
+grep -ri tokenKey ~/.local/share/coucou/               # harus kosong
 ```
+
+§4/5/6 berubah dari SKIP ke PASS begitu OpenCode/Hermes/Freebuff benar-benar jalan.
+Kalau agent-nya hidup tapi pill-nya tidak muncul, itu bug Coucou — bukan setup.
+Cek `~/.local/share/coucou/coucou.log`: `hermes: gateway online` + pill kosong =
+bug; `gateway offline` = agent-nya belum jalan.
 
 ---
 
 ## 7. Out of Scope
 
-- Web dashboard (ditunda eksplisit — repo `4` (end4-pC, Quickshell QML) focus dulu)
-- Backend cloud / Redis / Railway (**tidak perlu** — semua adapter loopback)
-- Auto-updater
-- Integrasi baru (Stripe, n8n, Vercel, dll — bawaan Coucou, dibiarkan)
-- Codex / AGY / Antigravity / Gemini adapter (**tidak ada** — user cuma minta 3 adapter baru)
-- macOS Swift changes
+- Backend cloud / Redis / Railway (**tidak perlu** — semua adapter loopback, dan
+  menjaga Coucou tidakanh tanpa akun/telemetry adalah salah satu guardrail-nya)
+- **Auto-updater**: yang di-update hanya Coucou fork ini, dan hanya lewat .deb /
+  AppImage yang kamu pasang sendiri. Tidak ada update dari upstream ke user — sync
+  upstream adalah urusan repo (`./scripts/sync_upstream.sh`), bukan runtime app.
+- **Adapter Codex / AGY / Antigravity / Gemini** — cuman OpenCode, Freebuff, Hermes
+- Integrasi baru: yang dipakai cuma **Linear, Notion, GitHub**. Stripe/n8n/Vercel/
+  Resend/Cal.com bawaan upstream dibiarkan apa adanya di kode, tapi tidak diaktifkan
+  secara default — Configuring key-nya adalah keputusan tiap orang, bukan default kita.
+- Perubahan ke front end yang sudah ada:-Mochi dipakai apa adanya.
 
 ---
 
 ## 8. Success Criteria
 
-- [ ] `cargo build --release` sukses → `.deb` + AppImage
-- worktree-checklist 9. Coucou jalan di Linux Mint 22.3, X11 **dan** Wayland (tidak crash)
-- [ ] Claude-Code monitoring **identik** dengan bawaan Coucou (regression check)
-- [ ] OpenCode: session/tool live di Mochi, update < 1 detik
-- [ ] Agent Hermes: status gateway + active agents + platform health live
-- [ ] Freebuff/ section 3.3 → Success criteria: session start/finish terdeteksi via file-watch
-- [ ] `tokenKey` freebuff tidak pernah muncul redacted
-- [ ] Coucou dimatikan → Claude Code tetap jalan normal (no block, no wait)
-- [ ] Tidak ada crash saat semua 4 agent mati each-check
-- [ ] `active_agents` = 0 saat idle → State Idle (jangan Working salah label)
+- [x] `bun run tauri build` sukses → `.deb` + AppImage
+- [x] Coucou jalan di Linux Mint, X11 (Wayland = fallback tray, tidak crash)
+- [x] Claude-Code monitoring **identik** dengan bawaan Coucou (regression check)
+- [x] OpenCode: session/tool live di Mochi, update < 1 detik
+- [x] Hermes: status gateway + active agents + platform health live
+- [x] Freebuff/Codebuff: session start/finish terdeteksi via file-watch
+- [x] `tokenKey` freebuff tidak pernah muncul di log/UI/event
+- [x] Coucou dimatikan → Claude Code tetap jalan normal (no block, no wait)
+- [x] Tidak ada crash saat semua 4 agent mati
+- [x] `active_agents` = 0 saat idle → State Idle (jangan Working salah label)
 
 ---
 
@@ -261,7 +284,7 @@ XDG_SESSION_TYPE=wayland ./target/release/cf.6f
 
 | Agent | Transport | Path/URL | Verification Command |
 |---|---|---| committed |
-| Claude-Yahoo | Unix socket | `~/Library/Application Support/NotchBuddy/nb.sock` (macOS) → `$XDG/runtime/coucou/coucou.sock` (Linux) | `nc -U $XDG_RUNTIME_DIR/coucou/coucou.sock` |
-| OpenCode | HTTP/SSE | `http://127.0.0.1:<port>` | `curl http://127.0.0.1:54321/session | jq '.[0].title'` |
-| §Hermes | Unix socket | `~/.hermes/gateway.sock` | `echo '{"verb":"status"}\n' | nc -U ~/.hermes/gateway.sock | jq '.result.gateway_state'` |
-| Freebuff/Codebuff | File system | `glob ~/.config/manicode/*.json` | `ls -la ~/.config/manicode/freebuff-timestamps/` |
+| Claude Code | Unix socket | `$XDG_RUNTIME_DIR/coucou/coucou.sock` (fallback `/tmp/coucou-<uid>.sock`) | `nc -U "$XDG_RUNTIME_DIR/coucou/coucou.sock"` |
+| OpenCode | HTTP/SSE | `http://127.0.0.1:<port>` (dari `$OPENCODE_PORT`, default 54321) | `curl -s http://127.0.0.1:54321/global/health` |
+| Hermes | Unix socket | `~/.hermes/gateway.sock` | `printf '{"verb":"status"}\n' \| nc -U ~/.hermes/gateway.sock` |
+| Freebuff/Codebuff | File system | `glob ~/.config/manicode/*.json` | `ls ~/.config/manicode/freebuff-live-*.json` |

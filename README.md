@@ -38,7 +38,7 @@ Meet **Mochi**: a soft little squircle with big eyes that pops out of the top ed
 - 🔌 **Integrations** — Stripe payments, n8n workflows, GitHub, Vercel deployments, Resend emails, Notion, Cal.com. Each one gets its own little colored Mochi.
 - 🎭 **A real character** — idle breathing, blinks, eyes that follow your mouse, emotes, 28 handcrafted sounds, a greeting on launch.
 - 🫥 **Invisible when idle** — hides away when nothing is running, peeks out when you hover the top edge of the screen.
-- 🤖 **Multi-agent** — watches OpenCode, Hermes and Freebuff/Codebuff alongside Claude Code, each in its own pill.
+- 🤖 **Multi-agent** — watches OpenCode, Hermes and Freebuff/Codebuff alongside Claude Code, each in its own pill. Start an agent, its pill appears; nothing running, no pill.
 - 🔒 **Private by design** — no telemetry, no account. Keys live in the Linux Secret Service (GNOME Keyring / KWallet). The app only talks to the services you plug in.
 
 <table>
@@ -74,18 +74,35 @@ bun run tauri build        # .deb + AppImage land in app/target/release/bundle/
 
 ## Setup
 
-Click the Coucou icon in the system tray → **Settings…**
+Click the Coucou icon in the system tray → **Settings**
 
 | What | Why | Where the key goes |
 |---|---|---|
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
 | **Anthropic API key / API base** | chat and questions about files | Linux Secret Service (GNOME Keyring / KWallet). Point **API base** at any Messages-compatible relay (LiteLLM, a gateway, a Chinese model relay) to run custom models — with a relay the key is optional |
-| Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Secret Service, all optional |
+| Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the integration pills | Secret Service, all optional. Each card links straight to the page where that key is created |
 
 Any other agent can get its own pill: tag a hook payload with `coucou_agent`
 (e.g. `coucou-hook --agent my-tool`) — see [`docs/AGENTS.md`](docs/AGENTS.md).
 
 If Coucou isn't running, the hook exits immediately: **Claude Code is never blocked.**
+
+### The three extra agents
+
+**You don't have to start anything first.** Coucou works on its own; Claude Code
+connects the moment its hooks are installed. The OpenCode, Hermes and
+Freebuff/Codebuff pills appear only when those agents are actually running — no
+placeholder row, because a pill that's always there would lie about what's happening.
+
+| Agent | Start it with | Check it with |
+|---|---|---|
+| OpenCode | `opencode serve --port 54321` | `curl -s localhost:54321/global/health` |
+| Hermes | `hermes gateway run` | `ls ~/.hermes/gateway.sock` |
+| Freebuff/Codebuff | run the CLI once | `ls ~/.config/manicode/freebuff-live-*.json` |
+
+No restart needed — the adapters reconnect on their own (backoff 1s→30s). If a pill
+doesn't show up, `grep -E "hermes:|opencode:|freebuff:" ~/.local/share/coucou/coucou.log`
+tells you whether the agent is down or the island is at fault.
 
 ## Things to try
 
@@ -115,7 +132,6 @@ Issues and PRs are very welcome — new integrations, new emotes, new sounds, bu
 
 ## Credits
 
-Built by [Louis Raillé](https://louisraille.fr) with Claude Code.
 Built by [Louis Raillé](https://louisraille.fr) with Claude Code; Linux port and multi-agent fork maintained here.
 Inspired by the notch-companion concepts shared by design studios — this project is independent and not affiliated with any of them.
 
@@ -126,7 +142,7 @@ Inspired by the notch-companion concepts shared by design studios — this proje
 
 ## Upstream sync
 
-This fork tracks [Louis-CFM/coucou](https://github.com/Louis-CFM/coucou) weekly:
+This fork tracks [Louis-CFM/coucou](https://github.com/Louis-CFM/coucou) daily:
 
 - `./scripts/sync_upstream.sh --check` writes a `SYNC-TODO.md` you (or your AI agent)
   read before editing — it lists the files where fork and upstream changes overlap.

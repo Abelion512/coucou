@@ -19,12 +19,13 @@ tree, and reintroducing `cfg(windows)` branches is a mistake, not portability.
 | `app/src-tauri/src/` | Rust backend — `socket.rs` (hook relay), `agents/` (AgentBus + 3 adapters), `island/` (GTK window/cursor), `hooks.rs`, `secrets.rs` |
 | `app/hook/` | `coucou-hook` — the Claude Code relay binary (Unix socket, `SO_PEERCRED`) |
 | `app/src/` | Island front end — TypeScript, no framework, Canvas 2D Mochi |
+| `app/src/island/agents.ts` | `agent` event → agent pills. Delete it and the three adapters go silent |
 | `shared/sounds/` | The 28 WAVs (path declared once in `app/vite.config.ts`) |
 | `scripts/verify_coucou_linux.sh` | Spec §6 live verification (PASS/FAIL/SKIP) |
 | `scripts/sync_upstream.sh` | Upstream merge tool; writes `SYNC-TODO.md` |
 | `docs/LINUX.md` | Build, verify, upstream-sync policy, conflict map |
 | `docs/SPEC-linux-mult-agent.md` | The port + adapters spec |
-| `docs/SPEC-agent-pills.md` | Agent-pills design — matured, **deferred**, not built |
+| `docs/SPEC-agent-pills.md` | Agent-pills design — v1 (pill) **built**; health row deferred |
 
 ## Build & verify
 

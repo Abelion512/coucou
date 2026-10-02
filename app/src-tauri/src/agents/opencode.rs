@@ -273,25 +273,26 @@ async fn handle_event(
 
 /// Titles for the pills: `/session` is cheap and documented. Fetched on the
 /// session-poll tick, not per event.
+///
+/// The island shows one pill per agent, not one per session, so this reports the
+/// most recent session only — emitting every session would refill the pill's
+/// step ticker from the top on every 10 s tick.
 async fn poll_sessions(tx: &Sender<AgentEvent>) {
     let Ok(resp) = http_get("/session").await else { return };
     if let Ok(sessions) = serde_json::from_slice::<serde_json::Value>(&resp) {
-        if let Some(list) = sessions.as_array() {
-            for s in list.iter().take(8) {
-                let id = s.get("id").and_then(|i| i.as_str()).unwrap_or_default();
-                let title = s
-                    .get("title")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("OpenCode session");
-                let _ = tx
-                    .send(AgentEvent::Step {
-                        agent: Agent::Opencode,
-                        tool: "session".into(),
-                        detail: format!("{title} ({id})"),
-                    })
-                    .await;
-            }
-        }
+        let Some(latest) = sessions.as_array().and_then(|list| list.first()) else { return };
+        let id = latest.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+        let title = latest
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("OpenCode session");
+        let _ = tx
+            .send(AgentEvent::Step {
+                agent: Agent::Opencode,
+                tool: "session".into(),
+                detail: format!("{title} ({id})"),
+            })
+            .await;
     }
 }
 

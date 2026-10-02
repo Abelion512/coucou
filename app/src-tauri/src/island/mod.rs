@@ -166,23 +166,65 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
     }
 }
 
+/// CSS-pixel size the webview last reported, and the physical size that produced
+/// it. GTK's scale factor is unreliable at startup — on a 1.25× display both
+/// `Monitor::scale_factor` and `Window::scale_factor` reported 1.0 — so the webview
+/// measures itself and the correction lands here. See `note_viewport`.
+static VIEWPORT: Mutex<Option<(f64, f64, f64)>> = Mutex::new(None);
+
+/// Records the CSS size the webview actually got, alongside the CSS size we asked
+/// for. A mismatch means the window is too small for the island, which is what cut
+/// the 640 px panel off at both edges of a 576 px viewport.
+pub fn note_viewport(css_w: f64, css_h: f64) {
+    let requested = if CURRENT_COLLAPSED.load(Ordering::Relaxed) {
+        (STRIP_W, STRIP_H)
+    } else {
+        (PANEL_W, PANEL_H)
+    };
+    *VIEWPORT.lock().unwrap() = Some((css_w, css_h, scale_hint(css_w, requested.0)));
+}
+
+/// The ratio between CSS pixels and physical pixels, learned from what the webview
+/// reported. Falls back to GTK's own idea of the scale factor.
+fn scale_hint(css_w: f64, requested_w: f64) -> f64 {
+    if css_w > 0.0 && requested_w > 0.0 {
+        let ratio = requested_w / css_w;
+        if (0.25..=4.0).contains(&ratio) {
+            return ratio;
+        }
+    }
+    1.0
+}
+
+/// Set by `apply_geometry` so `note_viewport` knows which size was last asked for.
+static CURRENT_COLLAPSED: AtomicBool = AtomicBool::new(false);
+
 /// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
+///
+/// The scale factor used here is the one the webview reported (see `VIEWPORT`),
+/// falling back to GTK's. Getting this wrong does not merely move the island: it
+/// makes the window smaller than the layout, and the island is then clipped.
 pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
 
-    let scale = m.scale_factor();
+    CURRENT_COLLAPSED.store(collapsed, Ordering::Relaxed);
+    let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
+
     let mp = *m.position();
     let ms = *m.size();
-
-    let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
+    let scale = VIEWPORT
+        .lock()
+        .unwrap()
+        .map(|(_, _, s)| s)
+        .unwrap_or_else(|| win.scale_factor().unwrap_or(m.scale_factor()))
+        .max(0.1);
     let pw = (lw * scale).round().max(1.0) as u32;
     let ph = (lh * scale).round().max(1.0) as u32;
     let x = mp.x + (ms.width as i32 - pw as i32) / 2;
-    let y = mp.y;
 
+    let _ = win.set_position(PhysicalPosition::new(x, mp.y));
     let _ = win.set_size(PhysicalSize::new(pw, ph));
-    let _ = win.set_position(PhysicalPosition::new(x, y));
     // Moving across displays can rescale the window: re-assert the physical size.
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     let _ = win.set_always_on_top(true);

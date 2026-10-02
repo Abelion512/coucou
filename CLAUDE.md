@@ -15,9 +15,11 @@ tree — see the sync rules below for how that trade-off is managed.
   cursor/click-through, GTK), `hooks.rs` (settings.json installer), `secrets.rs`.
 - `app/hook/` — `coucou-hook`, the Claude Code relay (Unix socket, SO_PEERCRED).
 - `app/src/` — island front end (TypeScript, no framework; Canvas 2D Mochi).
+- `app/src/island/agents.ts` — maps the `agent` event to agent pills. Without it the
+  three adapters run, log, and stay invisible.
 - `shared/sounds/` — the 28 WAVs, shared repo assets (path declared once in `app/vite.config.ts`).
 - `docs/SPEC-linux-mult-agent.md` — the port + adapters spec. `docs/LINUX.md` — build, verify, sync.
-- `docs/SPEC-agent-pills.md` — agent-pills design: matured, **deferred, not built**.
+- `docs/SPEC-agent-pills.md` — agent-pills design: v1 (the pills) **built**; health row deferred.
 - `docs/SPEC.md`, `docs/INTEGRATIONS.md` — upstream behaviour spec (French, still useful for views/states).
 - `design/prototype/notch-buddy.html` — original prototype, the visual source of truth.
 

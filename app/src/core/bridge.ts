@@ -98,6 +98,19 @@ export const Bridge = {
 
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
+
+  /**
+   * Tells Rust the webview's real CSS-pixel size, so the window can be sized to
+   * give back exactly that many CSS pixels.
+   *
+   * GTK cannot be trusted to know the scale factor at startup — on a 1.25×
+   * display `Monitor::scale_factor` and `Window::scale_factor` both reported 1.0,
+   * so Rust sized the window for 720 CSS px and the webview only got 576, cutting
+   * the island off at both edges. The webview is the one that divides physical
+   * pixels by the real factor, so it is the authority here.
+   */
+  reportViewport: (width: number, height: number) =>
+    call<void>("report_viewport", { width, height }),
 };
 
 export interface IntegrationUpdate {

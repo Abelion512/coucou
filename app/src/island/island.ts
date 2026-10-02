@@ -32,6 +32,19 @@ const PRE_PROGRESS = USC.T_PROG_START - USC.T_DROP;
 
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
 
+/**
+ * Width the island is centred in, in CSS px — the window's real inner width.
+ *
+ * PANEL_W is what we ask Rust for; on a display whose scale factor is not 1 the
+ * window comes back narrower in CSS px than we requested (720 physical at 1.25×
+ * is a 576 CSS px viewport), and centring in 720 clipped the 640 px island. The
+ * live value is the only one that can be right, so fall back to the request.
+ */
+function panelWidth(): number {
+  const w = window.innerWidth;
+  return w > 0 ? w : PANEL_W;
+}
+
 export class Island {
   readonly fsm = new IslandStateMachine();
 
@@ -65,6 +78,8 @@ export class Island {
   private glow: { shown: boolean; d: number; cx: number; cy: number; color: string; opacity: number } | null = null;
   private botVisible: boolean | null = null;
   private uploadShown = false;
+  /** Window width in CSS px, so a resize re-centres instead of clipping. */
+  private panelPx = 0;
 
   private engine = new BotEngine();
   private greeting = new Greeting();
@@ -127,13 +142,14 @@ export class Island {
       openTarget: () => {
         const task = State.focusTask;
         if (!task) return;
+        // Same targets as views/integrations.ts OPEN_URLS: the API-key page.
         const urls: Record<string, string> = {
-          integration_resend: "https://resend.com/emails",
-          integration_vercel: "https://vercel.com/dashboard",
-          integration_github: "https://github.com",
-          integration_stripe: "https://dashboard.stripe.com/payments",
-          integration_notion: "https://notion.so",
-          integration_calcom: "https://app.cal.com/bookings",
+          integration_resend: "https://resend.com/api-keys",
+          integration_vercel: "https://vercel.com/account/tokens",
+          integration_github: "https://github.com/settings/tokens",
+          integration_stripe: "https://dashboard.stripe.com/apikeys",
+          integration_notion: "https://www.notion.so/my-integrations",
+          integration_calcom: "https://app.cal.com/api-keys",
         };
         if (task.id === "integration_claude") void Bridge.openInEditor(task.sessionCwd ?? null);
         else if (task.id === "integration_n8n") void Bridge.openN8n();
@@ -488,6 +504,12 @@ export class Island {
     const miniLeft = w - 40 - 14.5;
     const miniTop = hh / 2 - 14.5;
     const sideLeft = (w - EXPANDED_W) / 2;
+    if (this.panelPx !== panelWidth()) {
+      // The window was resized (scale factor, display change): the island has to
+      // be re-centred in the new width, and the side canvases follow it.
+      this.panelPx = panelWidth();
+      this.geom = null;
+    }
     const g = this.geom;
     if (!g || g.w !== w || g.h !== hh || g.r !== r || g.miniLeft !== miniLeft || g.miniTop !== miniTop || g.sideLeft !== sideLeft) {
       this.islandEl.style.width = `${w}px`;
@@ -503,7 +525,7 @@ export class Island {
       this.geom = { w, h: hh, r, miniLeft, miniTop, sideLeft };
     }
 
-    const rect = { x: (PANEL_W - w) / 2, y: 0, w, h: hh };
+    const rect = { x: (panelWidth() - w) / 2, y: 0, w, h: hh };
     const p = this.pushedRect;
     if (Math.abs(p.x - rect.x) > 0.5 || Math.abs(p.w - rect.w) > 0.5 || Math.abs(p.h - rect.h) > 0.5) {
       this.pushedRect = rect;
@@ -511,11 +533,11 @@ export class Island {
     }
   }
 
-  /** Island rect in window coordinates (origin top-left of the 720×320 window). */
+  /** Island rect in window coordinates (origin top-left of the window). */
   private islandRect(): { x: number; y: number; w: number; h: number } {
     const w = this.width.value;
     const hh = this.height.value;
-    return { x: (PANEL_W - w) / 2, y: 0, w, h: hh };
+    return { x: (panelWidth() - w) / 2, y: 0, w, h: hh };
   }
 
   // ── Window collapse (hidden → tiny wake strip, zero polling) ────────────────

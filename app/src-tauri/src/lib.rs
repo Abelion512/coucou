@@ -14,6 +14,7 @@ mod socket;
 mod tray;
 
 use std::process::Command;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
@@ -104,6 +105,23 @@ fn set_collapsed(app: AppHandle, shared: State<Shared>, collapsed: bool) {
 #[tauri::command]
 fn set_island_rect(shared: State<Shared>, x: f64, y: f64, width: f64, height: f64) {
     shared.gate.set_rect(island::IslandRect { x, y, w: width, h: height });
+}
+
+/// The webview's real CSS-pixel size, measured in JS.
+///
+/// The island lays itself out in CSS pixels, so the window has to be big enough
+/// to hand back exactly the panel the front end was designed around. GTK's
+/// reported scale factor is not reliable at startup (see island::apply_geometry),
+/// so the webview reports what it actually got and Rust corrects the window once.
+#[tauri::command]
+fn report_viewport(app: AppHandle, shared: State<Shared>, width: f64, height: f64) {
+    if width <= 0.0 || height <= 0.0 {
+        return;
+    }
+    island::note_viewport(width, height);
+    let pref = shared.settings.lock().unwrap().screen.clone();
+    let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
+    island::apply_geometry(&app, &pref, collapsed);
 }
 
 #[tauri::command]
@@ -348,7 +366,82 @@ fn open_settings_window(app: AppHandle) {
     show_settings_window(&app);
 }
 
+/// Points GStreamer at the system's plugins and gives it its own registry file.
+///
+/// Must run before any thread or webview starts, because GStreamer reads these
+/// once at init.
+///
+/// Inside the AppImage, `libgstreamer` is bundled but the *plugins* are not — so
+/// WebKitGTK failed with "GStreamer element autoaudiosink not found" and the 28
+/// sounds never played. The system's plugins are the complete set, so the AppImage
+/// uses those. The registry gets its own file because the AppImage is mounted at a
+/// new path every launch: sharing the system's would rewrite it with plugin paths
+/// that vanish on exit.
+fn prepare_media_environment() {
+    if std::env::var_os("APPIMAGE").is_none() {
+        return;
+    }
+    if let Some(plugins) = system_gstreamer_plugins() {
+        // Prepend rather than replace: a plugin the system has but the AppImage
+        // does not is exactly what we need, and one only the AppImage has would be
+        // rare enough not to matter.
+        let existing = std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0").unwrap_or_default();
+        let path = if existing.is_empty() { plugins } else { format!("{plugins}:{existing}") };
+        std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", path);
+    }
+    if std::env::var_os("GST_REGISTRY").is_none() {
+        if let Some(cache) = settings::cache_dir() {
+            if std::fs::create_dir_all(&cache).is_ok() {
+                std::env::set_var("GST_REGISTRY", cache.join("gstreamer-registry.bin"));
+            }
+        }
+    }
+}
+
+/// Where this distro keeps its GStreamer plugins.
+///
+/// Debian/Ubuntu put them in the multiarch dir (`/usr/lib/x86_64-linux-gnu/…`),
+/// which is not under `$XDG_DATA_DIRS`, so both layouts are checked. Returns every
+/// directory that exists — GStreamer takes a colon-separated list, and picking the
+/// wrong single one would leave the sounds silent again.
+fn system_gstreamer_plugins() -> Option<String> {
+    fn plugin_dir(base: &Path) -> Option<String> {
+        let dir = base.join("gstreamer-1.0");
+        dir.is_dir().then(|| dir.to_string_lossy().into_owned())
+    }
+
+    let mut found: Vec<String> = Vec::new();
+    // The multiarch directory: named by dpkg, so ask it rather than guessing.
+    if let Some(arch) = std::env::var_os("DEB_HOST_MULTIARCH") {
+        if let Some(d) = plugin_dir(&PathBuf::from("/usr/lib").join(arch)) {
+            found.push(d);
+        }
+    }
+    // Otherwise find it under /usr/lib — the arch triplet is the only child there
+    // that has a gstreamer-1.0 inside.
+    if found.is_empty() {
+        if let Ok(entries) = std::fs::read_dir("/usr/lib") {
+            for entry in entries.flatten() {
+                if let Some(d) = plugin_dir(&entry.path()) {
+                    found.push(d);
+                }
+            }
+        }
+    }
+    // And the shared locations, which is where non-Debian distros keep them.
+    let dirs = std::env::var("XDG_DATA_DIRS")
+        .unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+    for d in dirs.split(':') {
+        if let Some(p) = plugin_dir(&PathBuf::from(d)) {
+            found.push(p);
+        }
+    }
+
+    (!found.is_empty()).then(|| found.join(":"))
+}
+
 pub fn run() {
+    prepare_media_environment();
     let loaded = settings::load();
     let gate = Arc::new(PollGate::new());
 
@@ -368,6 +461,7 @@ pub fn run() {
             save_settings,
             set_collapsed,
             set_island_rect,
+            report_viewport,
             focus_window,
             reposition,
             open_url,
@@ -426,4 +520,20 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Coucou");
+}
+
+#[cfg(test)]
+mod media_tests {
+    use super::system_gstreamer_plugins;
+
+    /// The AppImage bundles libgstreamer but none of its plugins, so without this
+    /// the sounds are silent in the packaged build while working in dev.
+    #[test]
+    fn finds_the_system_gstreamer_plugins() {
+        let found = system_gstreamer_plugins().expect("no gstreamer-1.0 found");
+        assert!(found.contains("/usr/"), "expected an absolute system path, got {found}");
+        for part in found.split(':') {
+            assert!(std::path::Path::new(part).is_dir(), "{part} does not exist");
+        }
+    }
 }

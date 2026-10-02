@@ -63,10 +63,10 @@ function btn(
 }
 
 /** AgentWho — coloured dot + task name + grey label. */
-/** Chip next to an agent's name: n8n, a third-party agent pill, or Claude Code. */
+/** Chip next to an agent's name: n8n, a third-party agent pill, or Claude Code.
+ *  An agent pill already carries its platform name, so "Agent" would add nothing. */
 function sourceLabel(source: AgentTask["source"] | undefined): string {
   if (source === "n8n") return "n8n";
-  if (source === "agent") return "Agent";
   return "Claude Code";
 }
 
@@ -185,10 +185,13 @@ function buildOverview(actions: ViewActions): ViewHost {
         mode = null;
       }
 
-      // A live Claude Code session keeps the ticker; every other pill shows its
-      // own card, exactly like IntegrationCardView.
+      // A live session keeps the ticker; an integration pill shows its own card,
+      // exactly like IntegrationCardView. Agent pills are sessions, not pollers —
+      // without this they rendered as an empty integration card.
       const sessionActive =
-        task?.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0);
+        task != null &&
+        (task.id === "integration_claude" || task.source === "agent") &&
+        (task.state !== "idle" || task.steps.length > 0);
 
       if (task && sessionActive) {
         if (mode !== "ticker") {

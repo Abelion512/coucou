@@ -81,6 +81,15 @@ pub fn hook_exe_path() -> PathBuf {
     local_dir().join("bin").join("coucou-hook")
 }
 
+/// $XDG_CACHE_HOME/coucou — regenerated data. Currently the GStreamer registry,
+/// which has to stay out of the shared one (see `prepare_media_environment`).
+pub fn cache_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+    Some(base.join("coucou"))
+}
+
 fn settings_path() -> PathBuf {
     config_dir().join("settings.json")
 }

@@ -198,6 +198,9 @@ class AppState {
     this.notify();
   }
 
+  /** The Claude Code pill. Everything else that is not an integration is an agent pill. */
+  static readonly CLAUDE_ID = "integration_claude";
+
   /** loadIntegrationTasks() — Claude Code always on, the rest opt-in (max 4). */
   loadIntegrationTasks() {
     for (const proto of INTEGRATION_AGENTS) {
@@ -241,7 +244,7 @@ class AppState {
    *  Inserted right after integration_claude so it appears in the visible slice(0,4). */
   upsertExternalAgent(id: string, name: string, color: string) {
     if (this.tasks.some((t) => t.id === id)) return;
-    const at = this.tasks.findIndex((t) => t.id === "integration_claude") + 1;
+    const at = this.tasks.findIndex((t) => t.id === AppState.CLAUDE_ID) + 1;
     this.tasks.splice(at, 0, {
       id, name, color,
       state: "idle", stepIndex: 0, steps: [],
