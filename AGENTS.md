@@ -30,14 +30,25 @@ tree, and reintroducing `cfg(windows)` branches is a mistake, not portability.
 ## Build & verify
 
 ```bash
-cd app && bun install && cargo build --release -p coucou-hook && bun run tauri build
-cargo test -p coucou --lib && cargo test -p coucou-hook    # 15 tests, all must pass
+cd app && bun install && cargo build --release -p coucou-hook
+TMPDIR=/tmp bun run tauri build                            # .deb + AppImage
+cargo test -p coucou --lib && cargo test -p coucou-hook    # all must pass
 cargo clippy --all-targets                                # 0 warnings is the bar
-./scripts/verify_coucou_linux.sh --no-build
+cd .. && ./scripts/verify_coucou_linux.sh --no-build
 ```
 
-Before finishing any change: `bun run build` (runs `tsc --noEmit`), both
-`cargo test` suites, and `cargo clippy --all-targets`. Zero warnings is the bar.
+**Build the bundle before you call a task done.** Not just the checks — the
+release build, and run the resulting binary. Half the bugs in this fork's history
+only existed in the packaged app: the island was drawn under the desktop panel,
+the window was too small for its own layout, and the AppImage was silent because
+it bundles `libgstreamer` without a single plugin. None of those is visible to
+`tsc`, to `cargo test`, or to a dev build. `TMPDIR=/tmp` is not optional inside a
+sandbox — the default `TMPDIR` makes bundling fail with `os error 2`.
+
+Then look at it. `scripts/ui_drive.sh` drives the running app with real X input
+and measures what happened, which is the only way to catch click-through,
+clipped panels and invisible headers — all of them window-manager behaviour that
+no DOM assertion can see.
 
 **Per-language gates.** Rust: `cargo clippy` (clean) and `cargo test`. TypeScript:
 `tsc --noEmit` under `strict` + `noUnusedLocals` (via `bun run build`). `cargo fmt` is
