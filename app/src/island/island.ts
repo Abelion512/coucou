@@ -857,7 +857,9 @@ export class Island {
     if (!ctx) return;
 
     const focus = State.focusTask;
-    this.engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
+    // The left Mochi wears the focused pill's colour. Gating this on
+    // `isIntegration` left the three adapters on the default white body.
+    this.engine.bodyColor = focus ? hexToRGB(focus.color) : null;
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();

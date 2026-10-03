@@ -14,7 +14,6 @@ export interface AgentTask {
   stepIndex: number;
   steps: string[];
   source: AgentSource;
-  isIntegration: boolean;
   emote?: BotEmoteName | null;
   miniEye?: EyeShape | null;
   pillBadge?: PillBadge | null;
@@ -53,7 +52,7 @@ export interface SearchResult {
 const task = (
   id: string, name: string, color: string, source: AgentSource,
 ): AgentTask => ({
-  id, name, color, state: "idle", stepIndex: 0, steps: [], source, isIntegration: true,
+  id, name, color, state: "idle", stepIndex: 0, steps: [], source,
 });
 
 /** AgentTask.integrationAgents — same ids, names and colours as macOS. */
@@ -276,7 +275,7 @@ class AppState {
     this.tasks.splice(at, 0, {
       id, name, color,
       state: "idle", stepIndex: 0, steps: [],
-      source: "agent", isIntegration: false,
+      source: "agent",
     });
     if (!this.focusId) this.focusId = id;
     this.notify();

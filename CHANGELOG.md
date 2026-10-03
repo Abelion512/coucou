@@ -7,6 +7,11 @@ from this repository.
 
 ## Unreleased
 
+- **The Mochi on the left wears the agent's colour.** Focusing an OpenCode,
+  Hermes or Freebuff pill used to leave it the default white body, because the
+  island only tinted itself for integration pills — the three adapters this fork
+  exists for were the one case it skipped. It now follows whatever pill is
+  focused, the same way the pill's own mini Mochi already did
 - **Mochi answers in English.** The assistant was told to "respond in the user's
   language", so a session in Indonesian or French got its answers back that way
   while the island, the docs and the specs stayed English. It now always answers
