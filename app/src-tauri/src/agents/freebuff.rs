@@ -171,3 +171,10 @@ pub fn start(_app: tauri::AppHandle, tx: Sender<AgentEvent>) {
 pub fn healthy() -> bool {
     LIVE.load(Ordering::Relaxed)
 }
+
+/// Same flag as `healthy` here — for Freebuff the two coincide, because the only
+/// thing that makes this adapter useful is a live session. The Settings screen
+/// still asks both, so every adapter reports the same shape.
+pub fn busy() -> bool {
+    LIVE.load(Ordering::Relaxed)
+}

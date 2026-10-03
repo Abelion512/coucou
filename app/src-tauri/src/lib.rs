@@ -598,6 +598,11 @@ pub fn run() {
             let bus_app = handle.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
+                    // A desktop notification is not a decision and not a write
+                    // path: it tells the user an agent wants attention, and it
+                    // still leaves answering to the agent's own terminal. That is
+                    // what makes it safe for an observe-only adapter to send one.
+                    notify_desktop(&event);
                     agents::emit(&bus_app, &event);
                 }
             });
@@ -606,6 +611,48 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Coucou");
+}
+
+/// A desktop notification for the things the island cannot interrupt you about.
+///
+/// Claude Code is deliberately excluded: its permission card is on screen
+/// already, and a second notification for the same thing is noise. The three
+/// adapters are the opposite case — they have no card, so a question or a
+/// permission request from them was previously invisible until you happened to
+/// look at the island.
+fn notify_desktop(event: &agents::AgentEvent) {
+    use agents::AgentEvent;
+    let (title, body) = match event {
+        AgentEvent::Notification { agent, kind, message } => {
+            let who = agent_name(*agent);
+            // A platform complaining is not something to interrupt for; a question
+            // ending in '?' is.
+            if kind != "question" && !message.ends_with('?') {
+                return;
+            }
+            (who, message.clone())
+        }
+        AgentEvent::PermissionReq { agent, tool, .. } => {
+            (agent_name(*agent), format!("{tool} wants permission — answer it in its own terminal"))
+        }
+        _ => return,
+    };
+    // No `notify-send`, or it fails: the island still shows the pill.
+    let _ = Command::new("notify-send")
+        .arg("--app-name=Coucou")
+        .arg("--expire-time=15000")
+        .arg(title)
+        .arg(body)
+        .spawn();
+}
+
+fn agent_name(agent: agents::Agent) -> &'static str {
+    match agent {
+        agents::Agent::ClaudeCode => "Claude Code",
+        agents::Agent::Opencode => "OpenCode",
+        agents::Agent::Hermes => "Hermes",
+        agents::Agent::Freebuff => "Freebuff",
+    }
 }
 
 #[cfg(test)]

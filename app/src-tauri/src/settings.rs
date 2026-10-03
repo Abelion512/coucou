@@ -42,7 +42,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             sound_enabled: true,
-            sound_volume: 0.12,
+            sound_volume: 0.5,
             auto_close_interval: 15.0,
             absence_interval: 180.0,
             active_integrations: vec![
@@ -104,7 +104,14 @@ fn settings_path() -> PathBuf {
 
 pub fn load() -> Settings {
     match std::fs::read(settings_path()) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Ok(bytes) => {
+            let mut s: Settings = serde_json::from_slice(&bytes).unwrap_or_default();
+            // Volume was capped at 0.2 while the slider now goes to 1.0, so a
+            // stored value from an older build is still valid — but anything out
+            // of range would be accepted by Web Audio as a gain above 1 and clip.
+            s.sound_volume = s.sound_volume.clamp(0.0, 1.0);
+            s
+        }
         Err(_) => Settings::default(),
     }
 }

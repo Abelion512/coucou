@@ -14,7 +14,7 @@ export type SoundName = (typeof SOUND_NAMES)[number];
 
 class SoundEngine {
   enabled = true;
-  volume = 0.12;
+  volume = 0.5;
 
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -76,7 +76,11 @@ class SoundEngine {
   }
 
   setVolume(v: number) {
-    this.volume = Math.max(0, Math.min(0.2, v));
+    // 0–1 is the Web Audio range, and 1 is the real maximum. The old ceiling of
+    // 0.2 came from the macOS player and meant that even at "max" in Settings a
+    // sound played at a fifth of the volume the system itself would have used,
+    // which is inaudible across a desk.
+    this.volume = Math.max(0, Math.min(1, v));
     if (this.master) this.master.gain.value = this.volume;
   }
 

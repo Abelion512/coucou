@@ -36,7 +36,7 @@ Meet **Mochi**: a soft little squircle with big eyes that pops out of the top ed
 - 💬 **Ask Claude anything** — built-in chat, straight from the island. Pick a model in Settings, or point **API base** at any Messages-compatible relay for a custom model.
 - 📎 **Drop a file on the island** — Mochi turns into a box and swallows it, then you can ask a question about it.
 - 🔌 **Integrations** — Stripe payments, n8n workflows, GitHub, Vercel deployments, Resend emails, Notion, Cal.com. Each one gets its own little colored Mochi.
-- 🎭 **A real character** — idle breathing, blinks, eyes that follow your mouse, emotes, 28 handcrafted sounds, a greeting on launch.
+- 🎭 **A real character** — idle breathing, blinks, eyes that follow your mouse, emotes, 28 handcrafted sounds (volume 0–100%, default 50%), a greeting on launch.
 - 🫥 **Invisible when idle** — hides away when nothing is running, peeks out when you hover the top edge of the screen.
 - 🤖 **Multi-agent** — watches OpenCode, Hermes and Freebuff/Codebuff alongside Claude Code, each in its own pill. Start an agent, its pill appears; nothing running, no pill.
 - 🔒 **Private by design** — no telemetry, no account. Keys live in the Linux Secret Service (GNOME Keyring / KWallet). The app only talks to the services you plug in.
@@ -109,8 +109,16 @@ placeholder row, because a pill that's always there would lie about what's happe
 | Hermes | `hermes gateway run` | `ls ~/.hermes/gateway.sock` |
 | Freebuff/Codebuff | run the CLI once | `ls ~/.config/manicode/freebuff-live-*.json` |
 
-No restart needed — the adapters reconnect on their own (backoff 1s→30s). If a pill
-doesn't show up, `grep -E "hermes:|opencode:|freebuff:" ~/.local/share/coucou/coucou.log`
+No restart needed — the adapters reconnect on their own (backoff 1s→30s). Settings →
+**Agents** says which are alive and which have a session in progress, because
+"connected" and "working" are different things: an OpenCode server with no session
+is reachable and doing nothing.
+
+They also raise a desktop notification when they have a question or a permission
+request. That is a notice, not an answer — Coucou never decides anything for these
+three; you answer in the agent's own terminal.
+
+If a pill doesn't show up, `grep -E "hermes:|opencode:|freebuff:" ~/.local/share/coucou/coucou.log`
 tells you whether the agent is down or the island is at fault.
 
 ## Things to try

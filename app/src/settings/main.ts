@@ -563,7 +563,7 @@ function agentsSection(initial: AgentStatus[] | null): HTMLElement {
         ),
       );
     }
-    note.textContent = "Each agent gets a pill in the island while it is running. Coucou only watches: it never sends anything to these agents.";
+    note.textContent = "Red: not running. Green: a session is active. Grey: running but idle. Each agent gets a pill in the island while it is running. Coucou only watches: it never sends anything to these agents.";
   };
 
   paint(initial);
@@ -584,7 +584,7 @@ function agentsSection(initial: AgentStatus[] | null): HTMLElement {
 
 function generalSection(): HTMLElement {
   const volume = h("input", {
-    type: "range", min: "0", max: "0.2", step: "0.005",
+    type: "range", min: "0", max: "1", step: "0.01", title: "Web Audio gain, 0–100%",
     value: String(settings.soundVolume),
   }) as HTMLInputElement;
   volume.addEventListener("input", () => {

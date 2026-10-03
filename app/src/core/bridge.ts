@@ -125,7 +125,10 @@ export const Bridge = {
 
 export interface AgentStatus {
   agent: "opencode" | "hermes" | "freebuff" | "claude-code";
+  /** Reachable: the agent answered on its last probe. */
   connected: boolean;
+  /** Doing something right now. Reachable and idle is not working. */
+  working: boolean;
   endpoint: string | null;
   detail: string | null;
 }

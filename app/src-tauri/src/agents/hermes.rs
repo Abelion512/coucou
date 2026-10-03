@@ -54,6 +54,8 @@ static LAST_SESSION: Mutex<String> = Mutex::new(String::new());
 /// silent instead of filling the pill's ticker.
 static LAST_STEP: Mutex<String> = Mutex::new(String::new());
 static LAST_NOTICE: Mutex<String> = Mutex::new(String::new());
+/// The state last sent, so Settings can say "working" rather than only "connected".
+static LAST_STATE: Mutex<String> = Mutex::new(String::new());
 
 fn last_step() -> Option<String> { LAST_STEP.lock().ok().map(|v| v.clone()) }
 fn last_notice() -> Option<String> { LAST_NOTICE.lock().ok().map(|v| v.clone()) }
@@ -263,11 +265,26 @@ async fn report(
     // receives as an `agent` event. The adapter also called `emit()` on the same
     // state directly, so the front end got it twice per poll and had to dedupe.
     let _ = tx.send(AgentEvent::State { agent: Agent::Hermes, state }).await;
+    // Remember it for the settings screen, which asks "connected" and "working"
+    // as separate questions.
+    if let Ok(mut slot) = LAST_STATE.lock() {
+        *slot = format!("{state:?}");
+    }
 }
 
 /// Liveness: the gateway answered on the last poll, not merely "the file is there".
 pub fn healthy() -> bool {
     RUNNING.load(Ordering::Relaxed)
+}
+
+/// Is a Hermes agent actually running? The gateway reports `active_agents`, which
+/// is the honest answer — a gateway with an agent in flight is working; one that is
+/// merely up and idle is not.
+pub fn busy() -> bool {
+    LAST_STATE
+        .lock()
+        .map(|s| s.as_str() == "Working")
+        .unwrap_or(false)
 }
 
 /// Puts Hermes' own current session on the pill, once per change.

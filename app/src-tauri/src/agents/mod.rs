@@ -74,8 +74,12 @@ pub enum AgentEvent {
 pub struct AgentStatus {
     /// Serde id: `opencode`, `hermes`, `freebuff`. The front end keys off this.
     pub agent: Agent,
-    /// Whether the agent answered on its last probe.
+    /// Whether the agent answered on its last probe. "Reachable", not "useful":
+    /// an OpenCode server with no session is reachable and doing nothing.
     pub connected: bool,
+    /// Whether there is actually a live session right now — the difference the
+    /// island pill already draws but this screen could not.
+    pub working: bool,
     /// How to reach it, when there is a way to say.
     pub endpoint: Option<String>,
     /// What to show when it is not connected, or None when there is nothing to add.
@@ -89,18 +93,21 @@ pub fn status() -> Vec<AgentStatus> {
         AgentStatus {
             agent: Agent::Opencode,
             connected: opencode::healthy(),
+            working: opencode::busy(),
             endpoint: Some(opencode::endpoint()),
             detail: None,
         },
         AgentStatus {
             agent: Agent::Hermes,
             connected: hermes::healthy(),
+            working: hermes::busy(),
             endpoint: hermes::api_base(),
             detail: None,
         },
         AgentStatus {
             agent: Agent::Freebuff,
             connected: freebuff::healthy(),
+            working: freebuff::busy(),
             endpoint: None,
             detail: Some("~/.config/manicode".into()),
         },

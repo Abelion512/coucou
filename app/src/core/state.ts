@@ -95,7 +95,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
-  soundVolume: 0.12,
+  soundVolume: 0.5,
   autoCloseInterval: 15,
   absenceInterval: 180,
   // Resend is off by default: it needs its own key and nobody asked for it.

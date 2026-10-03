@@ -257,7 +257,22 @@ Merge upstream membawa empat fix Linux yang nyata:
 Tidak diambil: `refresh_click_through` (fallback untuk build tanpa cursor poll; poll
 milik kita jalan di X11) dan daftar fitur macOS.
 
-### Membuka island
+### Island dan panel desktop
+
+Island duduk **tepat di bawah panel**, bukan di atasnya. Panel Cinnamon menaruh jam
+dan notification centre di tengah atas — persis di tempat notch macOS — jadi
+dulu island digambar di `y` monitor dan tenggelam di belakangnya: tidak terlihat,
+dan bagian paling atas (header) tak pernah tampil.
+
+`_NET_WORKAREA` Cinnamon di sini = `0, 45, 1920, 1035`, dan island diposisikan ke
+titik itu. Perilaku ini *nempel ke work area*, bukan menimpa panel — dan disengaja:
+panel milik desktop, dan menimpanya berarti mencuri ruang yang selalu dipakai
+(jam, notifikasi, menu). Kalau Anda mau island masuk ke area panel, itu
+keputusan per-DE dan perlu eksplisit — bukan default diam-diam.
+
+Butuh dialog **Open Coucou** dari tray? Tidak. Arahkan kursor ke tepi atas
+tengah → bar kecil muncul (288×32) → klik untuk buka. Tray tetap ada sebagai
+jalan lain, bukan syarat.
 
 Tidak perlu tray sama sekali. Arahkan kursor ke **tepi atas tengah** — island
 muncul sebagai bar kecil (288×32), lalu **klik** untuk membuka. Tray ("Open

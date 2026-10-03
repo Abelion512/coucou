@@ -48,6 +48,15 @@ pub fn healthy() -> bool {
     RUNNING.load(Ordering::Relaxed)
 }
 
+/// Is a session actually running? Reachable and doing nothing is a different
+/// thing from working, and the settings screen says so.
+pub fn busy() -> bool {
+    LAST_STATE
+        .lock()
+        .map(|s| s.as_str() == "Working")
+        .unwrap_or(false)
+}
+
 /// The last state put on the pill, so a repeated one costs nothing.
 ///
 /// Without this the adapter emitted `Working` after *every* SSE line — including
