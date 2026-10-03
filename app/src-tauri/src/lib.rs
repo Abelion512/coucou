@@ -107,12 +107,9 @@ fn set_island_rect(shared: State<Shared>, x: f64, y: f64, width: f64, height: f6
     shared.gate.set_rect(island::IslandRect { x, y, w: width, h: height });
 }
 
-/// The webview's real CSS-pixel size, measured in JS.
-///
-/// The island lays itself out in CSS pixels, so the window has to be big enough
-/// to hand back exactly the panel the front end was designed around. GTK's
-/// reported scale factor is not reliable at startup (see island::apply_geometry),
-/// so the webview reports what it actually got and Rust corrects the window once.
+/// The webview's real CSS-pixel size, measured in JS. GTK's reported scale factor
+/// is not reliable at startup (see island::apply_geometry), so the webview
+/// reports what it actually got and Rust corrects the window once.
 #[tauri::command]
 fn report_viewport(app: AppHandle, shared: State<Shared>, width: f64, height: f64) {
     if width <= 0.0 || height <= 0.0 {
@@ -153,9 +150,9 @@ fn open_url_impl(url: &str) {
     let _ = Command::new("xdg-open").arg(url).spawn();
 }
 
-/// "Open terminal"/"Open editor" — the folder goes to the first editor on
-/// PATH. `code` is only first because it used to be the only one; the fallback
-/// ends at the file manager so the button still does something useful.
+/// "Open terminal"/"Open editor" — the folder goes to the first editor on PATH.
+/// `code` is only first because it used to be the only one; the fallback ends at
+/// the file manager so the button still does something useful.
 #[tauri::command]
 fn open_in_editor(path: Option<String>) -> bool {
     if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
@@ -295,21 +292,18 @@ async fn refresh_integration(app: AppHandle, id: String) {
     integrations::poll_once(app, &id).await;
 }
 
-/// The three agents' liveness, for the settings window.
-///
-/// The island deliberately shows nothing for an agent that is down — a permanent
-/// empty pill would be noise. Settings is where "why is it missing?" belongs, so
-/// this is the one surface that answers it.
+/// The three agents' liveness, for the settings window. The island shows nothing
+/// for an agent that is down — a permanent empty pill would be noise — so this is
+/// the one surface that answers "why is it missing?".
 #[tauri::command]
 fn agents_status() -> Vec<agents::AgentStatus> {
     agents::status()
 }
 
 /// "I am listening now" — re-sends every session the adapters already found.
-///
-/// Events raised before the island subscribed went to a webview that had not
-/// registered its handler yet, and no adapter repeats itself, so an agent that
-/// was running from the first second stayed invisible all session.
+/// Events raised before the island subscribed went to a webview with no handler
+/// registered, and no adapter repeats itself, so an agent running from the first
+/// second stayed invisible all session.
 #[tauri::command]
 fn agents_sync(app: tauri::AppHandle) {
     agents::replay(&app);
@@ -323,11 +317,10 @@ fn log_line(message: String) {
 
 // ── Settings window ───────────────────────────────────────────────────────────
 
-/// WebView2 allows exactly one browser environment per app, and its options are
+/// WebView2 allows exactly one browser environment per app, whose options are
 /// fixed by whichever webview is created first. Every window must therefore ask
-/// for the *same* arguments as the island (see `additionalBrowserArgs` in
-/// tauri.conf.json) — a mismatch makes the second window come up blank, with no
-/// error anywhere.
+/// for the *same* arguments as the island (`additionalBrowserArgs` in
+/// tauri.conf.json) — a mismatch makes the second window come up blank, silently.
 const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
 
 /// In a dev build the pages are served by Vite, so the second window needs the
@@ -394,10 +387,9 @@ fn open_settings_window(app: AppHandle) {
 /// What the relay currently offers, judged only against the ids we already know.
 ///
 /// A relay can list a thousand models — 9router lists 1013 — which is neither
-/// renderable in a dropdown nor useful to read. So nothing is downloaded into the
-/// UI: the cached ids go out, and what comes back is which of them are still
-/// there, plus a count so the user can see how big the catalogue is. A model the
-/// relay dropped is marked, never silently removed.
+/// renderable nor useful to read. So nothing is downloaded into the UI: the cached
+/// ids go out, and what comes back is which of them are still there, plus a count.
+/// A dropped model is marked, never silently removed.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ModelCheck {
@@ -462,24 +454,20 @@ async fn chat_models_check(shared: State<'_, Shared>, known: Vec<String>) -> Res
 }
 
 /// Points GStreamer at the system's plugins and gives it its own registry file.
+/// Must run before any thread or webview starts: GStreamer reads these once at init.
 ///
-/// Must run before any thread or webview starts, because GStreamer reads these
-/// once at init.
-///
-/// Inside the AppImage, `libgstreamer` is bundled but the *plugins* are not — so
+/// Inside the AppImage `libgstreamer` is bundled but the *plugins* are not, so
 /// WebKitGTK failed with "GStreamer element autoaudiosink not found" and the 28
-/// sounds never played. The system's plugins are the complete set, so the AppImage
-/// uses those. The registry gets its own file because the AppImage is mounted at a
-/// new path every launch: sharing the system's would rewrite it with plugin paths
-/// that vanish on exit.
+/// sounds never played. The registry gets its own file because the AppImage is
+/// mounted at a new path every launch, and sharing the system's would rewrite it
+/// with plugin paths that vanish on exit.
 fn prepare_media_environment() {
     if std::env::var_os("APPIMAGE").is_none() {
         return;
     }
     if let Some(plugins) = system_gstreamer_plugins() {
-        // Prepend rather than replace: a plugin the system has but the AppImage
-        // does not is exactly what we need, and one only the AppImage has would be
-        // rare enough not to matter.
+        // Prepend rather than replace: a plugin the system has but the AppImage does
+        // not is exactly what we need; one only the AppImage has is rare.
         let existing = std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0").unwrap_or_default();
         let path = if existing.is_empty() { plugins } else { format!("{plugins}:{existing}") };
         std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", path);
@@ -497,8 +485,7 @@ fn prepare_media_environment() {
 ///
 /// Debian/Ubuntu put them in the multiarch dir (`/usr/lib/x86_64-linux-gnu/…`),
 /// which is not under `$XDG_DATA_DIRS`, so both layouts are checked. Returns every
-/// directory that exists — GStreamer takes a colon-separated list, and picking the
-/// wrong single one would leave the sounds silent again.
+/// directory that exists — picking the wrong single one leaves the sounds silent.
 fn system_gstreamer_plugins() -> Option<String> {
     fn plugin_dir(base: &Path) -> Option<String> {
         let dir = base.join("gstreamer-1.0");
@@ -610,10 +597,9 @@ pub fn run() {
             let bus_app = handle.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = rx.recv().await {
-                    // A desktop notification is not a decision and not a write
-                    // path: it tells the user an agent wants attention, and it
-                    // still leaves answering to the agent's own terminal. That is
-                    // what makes it safe for an observe-only adapter to send one.
+                    // A desktop notification is not a decision and not a write path:
+                    // it leaves answering to the agent's own terminal, which is what
+                    // makes it safe for an observe-only adapter to send one.
                     notify_desktop(&event);
                     agents::emit(&bus_app, &event);
                 }
@@ -626,12 +612,9 @@ pub fn run() {
 }
 
 /// A desktop notification for the things the island cannot interrupt you about.
-///
-/// Claude Code is deliberately excluded: its permission card is on screen
-/// already, and a second notification for the same thing is noise. The three
-/// adapters are the opposite case — they have no card, so a question or a
-/// permission request from them was previously invisible until you happened to
-/// look at the island.
+/// Claude Code is excluded: its card is on screen already. The three adapters are
+/// the opposite case — they have no card, so their questions were invisible until
+/// you happened to look at the island.
 fn notify_desktop(event: &agents::AgentEvent) {
     use agents::AgentEvent;
     let (title, body) = match event {

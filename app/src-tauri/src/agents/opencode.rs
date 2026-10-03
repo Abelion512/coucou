@@ -9,17 +9,16 @@
 //   * `GET /session` → Session[].
 //
 // Event vocabulary cross-checked against upstream's own OpenCode integration
-// (Louis-CFM/coucou PR #47, `permission.asked`, `tool.execute.before/after`,
-// `session.created/idle/error`, `message.updated`). Properties ride one level
+// (Louis-CFM/coucou PR #47: `permission.asked`, `tool.execute.before/after`,
+// `session.created/idle/error`, `message.updated`); properties ride one level
 // down, inside `properties`.
 //
-// House rules from the spec: an absent server means `unavailable`, never a
-// crash and never a block; reconnect with 1s→2s→4s→…→30s backoff; the port is
-// never hardcoded — it is discovered from env (`OPENCODE_PORT`, what the TUI
-// and `opencode serve` print) with 54321 as the audited fallback; idle is
-// 30 s without events. Observe-only: nothing is ever sent to OpenCode. Its
-// permission flow (`permission.asked`) is upstream's plugin approach; this
-// adapter deliberately has no write path at all.
+// House rules from the spec: an absent server means `unavailable`, never a crash
+// and never a block; reconnect with 1s→2s→4s→…→30s backoff; the port is never
+// hardcoded — it is discovered from env (`OPENCODE_PORT`, what the TUI and
+// `opencode serve` print) with 54321 as the audited fallback; idle is 30 s without
+// events. Observe-only: nothing is ever sent to OpenCode, including its
+// `permission.asked` flow, which upstream answers with a plugin.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -57,11 +56,10 @@ pub fn busy() -> bool {
         .unwrap_or(false)
 }
 
-/// The last state put on the pill, so a repeated one costs nothing.
-///
-/// Without this the adapter emitted `Working` after *every* SSE line — including
-/// `server.heartbeat` on a completely idle server — and it emitted it *after*
-/// `session.idle` had already said `Idle`, so the pill could never rest.
+/// The last state put on the pill, so a repeated one costs nothing. Without this
+/// the adapter emitted `Working` after *every* SSE line — including
+/// `server.heartbeat` — and after `session.idle` had already said `Idle`, so the
+/// pill could never rest.
 static LAST_STATE: Mutex<String> = Mutex::new(String::new());
 
 async fn set_state_if_changed(tx: &Sender<AgentEvent>, state: AgentState) {
@@ -297,13 +295,11 @@ async fn handle_event(
 /// Titles for the pills: `/session` is cheap and documented. Fetched on the
 /// session-poll tick, not per event.
 ///
-/// `/session` is newest-first, so the first entry is the session the user is
-/// actually in. It is announced as `SessionStart` rather than a step: the island
-/// shows one pill per agent, and only `SessionStart` puts a session's own title on
-/// it. That also means a freshly started Coucou shows the session OpenCode is
-/// already in, instead of waiting for the next `session.created` to arrive over
-/// SSE. Re-announcing the same id would reset the pill's step ticker every 10 s, so
-/// the last announced id is remembered.
+/// It is newest-first, so the first entry is the session the user is actually in,
+/// announced as `SessionStart` because that is the only event that puts a
+/// session's own title on a pill. A freshly started Coucou therefore shows the
+/// session OpenCode is already in, instead of waiting for the next
+/// `session.created` over SSE.
 async fn poll_sessions(tx: &Sender<AgentEvent>) {
     let Ok(resp) = http_get("/session").await else { return };
     let Ok(sessions) = serde_json::from_slice::<serde_json::Value>(&resp) else { return };

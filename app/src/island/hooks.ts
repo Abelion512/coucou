@@ -93,12 +93,10 @@ function stepLabel(tool: string, input: Record<string, unknown>): string {
 }
 
 /**
- * What the Allow button actually authorises. Approving "Write" tells you nothing
- * — approving `Write · C:\…\.env` tells you everything, and the difference is
- * the whole point of approving from the island rather than blind.
- *
- * Ordered by how specific the field is, so an unfamiliar tool still shows
- * whatever identifying string it carries instead of falling back to its name.
+ * What the Allow button actually authorises. Approving "Write" tells you nothing;
+ * approving `Write · …\.env` tells you everything, which is the whole point of
+ * approving from here. Ordered by how specific the field is, so an unfamiliar tool
+ * still shows whatever identifying string it carries.
  */
 const APPROVAL_FIELDS = [
   "command", // Bash, PowerShell
@@ -111,16 +109,11 @@ const APPROVAL_FIELDS = [
 ] as const;
 
 /**
- * The text of an AskUserQuestion, or null when this is not one.
- *
- * It arrives as a PermissionRequest because that is the only hook event Claude
- * Code offers, but there is nothing to approve: the answer is a multiple choice
- * the hook protocol cannot carry, and allowing the request only lets the
- * terminal ask. The card therefore has to show the question itself — a card
- * reading "AskUserQuestion" with Allow and Deny is the least informative thing
- * this view can possibly show.
- *
- * Both shapes are accepted because only one of them is documented.
+ * The text of an AskUserQuestion, or null when this is not one. It arrives as a
+ * PermissionRequest because that is the only hook event Claude Code offers, but
+ * there is nothing to approve: the answer is a multiple choice the protocol cannot
+ * carry, so the card has to show the question itself. Both shapes are accepted
+ * because only one of them is documented.
  */
 function questionText(tool: string, input: Record<string, unknown>): string | null {
   if (tool !== "AskUserQuestion") return null;
@@ -166,9 +159,8 @@ export function registerHookHandlers(island: Island) {
 
 function handleHook(island: Island, payload: HookPayload) {
   if (State.paused) {
-    // Silence here used to cost Claude Code nearly two minutes: the relay waited
-    // for a decision from an island that had already decided not to look. Say so,
-    // and the terminal takes the question immediately.
+    // Silence used to cost Claude Code nearly two minutes: the relay waited on an
+    // island that had already decided not to look.
     if (payload.request_id) void Bridge.approvalDecline(payload.request_id);
     return;
   }
@@ -295,9 +287,8 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
 
     case "PermissionRequest": {
-      // External agents do not get an approval card — showing one would look like
-      // a Claude Code request. Decline immediately so the agent re-asks in its
-      // terminal. Approval support for other agents will come with Codex support.
+      // External agents get no approval card — one would look like a Claude Code
+      // request. Decline immediately so the agent re-asks in its own terminal.
       if (isExternalAgent) {
         if (payload.request_id) void Bridge.approvalDecline(payload.request_id);
         break;
@@ -308,9 +299,8 @@ function handleHook(island: Island, payload: HookPayload) {
       const input = payload.tool_input ?? {};
       const command = approvalTarget(tool, input);
       const sessionId = payload.session_id ?? "";
-      // "Always" was clicked for this exact tool and target earlier in this
-      // Claude Code session, so there is nothing left to ask: answer it and get
-      // out of the way. The card never appears, which is the point of the button.
+      // "Always" was already clicked for this tool and target in this Claude Code
+      // session, so the card never appears — which is the point of the button.
       if (State.approvalRemembered(sessionId, tool, command)) {
         if (requestId) void Bridge.approvalAck(requestId);
         if (requestId) void Bridge.approvalDecision(requestId, "allow");
@@ -318,9 +308,8 @@ function handleHook(island: Island, payload: HookPayload) {
         upsert(projectName, cwd);
         break;
       }
-      // One card, one request. A second one must never quietly replace the first
-      // — that would leave a human staring at request B while request A waits for
-      // a decision nobody can give. Hand it straight back to the terminal.
+      // One card, one request: a second one must never quietly replace the first,
+      // which would leave a human staring at B while A waits. Back to the terminal.
       if (State.pendingApproval && State.pendingApproval.requestId !== requestId) {
         if (requestId) void Bridge.approvalDecline(requestId);
         break;
@@ -343,8 +332,8 @@ function handleHook(island: Island, payload: HookPayload) {
         island.alert("approval");
       } else {
         // Another agent holds the view, so the card would yank it away. The badge
-        // is the signal instead — but it has to be on screen for that to mean
-        // anything, hence the reveal. We just told the relay a human can act.
+        // is the signal instead — but only if it is on screen, and we just told the
+        // relay a human can act.
         State.setPillBadge(CLAUDE_ID, "approval");
         island.reveal();
       }

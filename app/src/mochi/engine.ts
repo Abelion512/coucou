@@ -1,8 +1,7 @@
-// Mochi — direct port of NotchBuddy/Sources/App/BotEngine.swift to Canvas 2D.
-// Same constants, same tweens, same easings, same particles. The only intentional
-// difference is the `happy`/`wink` eye arc, which follows the prototype
-// (design/prototype/notch-buddy.html, the visual source of truth) — the Swift
-// arc angles produce a different shape.
+// Mochi — direct port of NotchBuddy/Sources/App/BotEngine.swift to Canvas 2D:
+// same constants, tweens, easings and particles. The one intentional difference is
+// the `happy`/`wink` eye arc, which follows the prototype
+// (design/prototype/notch-buddy.html, the visual source of truth).
 
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
@@ -679,13 +678,11 @@ export class BotEngine {
 
   private bodyPath(rx: number, ry: number, R: number): Path2D {
     // The outline depends only on these four numbers, and rebuilding it is 73
-    // iterations of cos/sin/pow plus a fresh Path2D that WebKit then re-tessellates
-    // for every fill and clip. With nine engines at 60 Hz that is ~158 000
-    // transcendentals a second, almost all of it recomputing an identical shape.
-    //
-    // A mini bot has a fixed size and morph 0, so its path is built once and
-    // reused; the main bot's radius moves while it springs, so its cache simply
-    // misses until it settles and then hits.
+    // cos/sin/pow iterations plus a Path2D WebKit re-tessellates for every fill
+    // and clip: with nine engines at 60 Hz that is ~158 000 transcendentals a
+    // second. A mini bot's size and morph are fixed, so its path is built once;
+    // the main bot's radius moves while it springs, so its cache misses until it
+    // settles and then hits.
     const m = this.morph;
     const cached = this.pathCache;
     if (

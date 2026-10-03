@@ -124,11 +124,9 @@ export class UploadCanvas {
   // ── Scene ─────────────────────────────────────────────────────────────────
 
   private drawScene(ctx: CanvasRenderingContext2D, f: UploadFrame, wallTime: number) {
-    // Island background.
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, USC.W, USC.ISL_H);
 
-    // Card.
     ctx.save();
     rr(ctx, USC.CARD_X, USC.CARD_Y, USC.CARD_W, USC.CARD_H, USC.CARD_R);
     ctx.clip();
@@ -225,14 +223,12 @@ export class UploadCanvas {
       text(ctx, `${Math.round(f.progress * 100)} %`, x1, by - 30, `500 12.5px ${FONT}`, "#A9ADB5", "right");
     }
 
-    // Track.
     if (barLen > 0) {
       ctx.fillStyle = "rgba(255,255,255,0.08)";
       rr(ctx, x0, by - 3, barLen, 6, 3);
       ctx.fill();
     }
 
-    // Fill.
     const fx = lerp(x0, x1, f.progress);
     if (fx > x0 + 1) {
       const flashGreen = `rgb(${Math.round(lerp(52, 110, f.flash))},${Math.round(
@@ -301,14 +297,12 @@ export class UploadCanvas {
 
     const { rx, ry } = bodyPath(ctx, f.morph, R);
 
-    // Body.
     const bg = ctx.createLinearGradient(rx * 0.7, -ry * 0.9, -rx * 0.8, ry * 0.9);
     bg.addColorStop(0, "#EDEDEF");
     bg.addColorStop(1, "#C4C5CA");
     ctx.fillStyle = bg;
     ctx.fill();
 
-    // Edge shadow.
     const sg = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.3);
     sg.addColorStop(0, "rgba(0,0,0,0)");
     sg.addColorStop(0.62, "rgba(0,0,0,0)");
@@ -333,7 +327,6 @@ export class UploadCanvas {
       ctx.stroke();
     }
 
-    // Mouth hole.
     const mh = f.mouth * R * mc;
     if (mh > 0.3) {
       const mw = 2 * rx - 0.24 * R;
@@ -357,7 +350,6 @@ export class UploadCanvas {
       }
     }
 
-    // Eyes.
     const ew = R * 0.25;
     const eh = R * (0.62 - 0.16 * mc);
     const ey = R * (0.02 + 0.28 * mc);
@@ -462,7 +454,6 @@ function drawEye(ctx: CanvasRenderingContext2D, shape: UploadEyeShape, w: number
       break;
 
     case "cup": {
-      // Flat top, semicircular bottom.
       const hh = h * 0.55;
       ctx.beginPath();
       ctx.moveTo(-w / 2, -hh / 2);

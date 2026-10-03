@@ -1,9 +1,6 @@
-// The three watched agents, once.
-//
-// The island and the Settings window both drew these, and they drifted: the
-// pill colours and the Settings dots were two copies of the same table, which
-// is how a pill could be one colour while its own status row claimed another.
-// One table, imported by both.
+// The three watched agents, once. The island and the Settings window both draw
+// these, and they used to drift: pill colours and Settings dots were two copies
+// of one table, so a pill could be a colour its own status row contradicted.
 
 export interface AgentMeta {
   /** What the user calls it. A pill is named after its agent, not its session. */
@@ -15,12 +12,12 @@ export interface AgentMeta {
 }
 
 export const AGENTS_META: Record<string, AgentMeta> = {
-  // Grey on purpose: OpenCode is the one that is usually just there. A blue
-  // pill read as "something is happening" when most of the time nothing is.
+  // Grey on purpose: OpenCode is the one that is usually just there, and a blue
+  // pill read as "something is happening" when nothing was.
   // The "how" is not decoration. `opencode serve` runs a *separate* server from
-  // the one a plain `opencode` TUI talks to — the TUI brings its own — so a
-  // working session in a bare TUI is invisible to the island no matter what the
-  // adapter does. `opencode attach` is what puts the TUI on the watched server.
+  // the one a plain `opencode` TUI talks to, so a working session in a bare TUI
+  // is invisible to the island however good the adapter is — `opencode attach`
+  // is what puts the TUI on the watched server.
   opencode: {
     name: "OpenCode",
     color: "#8A8F98",

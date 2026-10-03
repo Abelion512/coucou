@@ -1,6 +1,5 @@
-// Island views — DOM ports of IslandViewContent.swift. Paddings, font sizes,
-// colours and wording are copied from the Swift views so both platforms read
-// identically.
+// Island views — DOM ports of IslandViewContent.swift: paddings, font sizes,
+// colours and wording are copied so both platforms read identically.
 
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
@@ -63,33 +62,24 @@ function btn(
   );
 }
 
-/** AgentWho — coloured dot + task name + grey label. */
 /**
- * The grey chip beside an agent's name.
- *
- * It used to be a hard-coded "Claude Code" for anything that was not an n8n
- * integration, so every adapter pill — OpenCode, Hermes, Freebuff — was labelled
- * as though it were Claude Code. A pill already carries its platform name, so the
- * chip only has to say what kind of thing it is; for the watched agents the
- * session title is far more useful than a word that names the wrong tool.
+ * The grey chip beside an agent's name. It used to hard-code "Claude Code" for
+ * anything that was not an n8n integration, so every adapter pill was labelled as
+ * the wrong tool; a pill already carries its own name.
  */
 function sourceLabel(task: AgentTask | null): string {
   if (!task) return "";
   if (task.source === "n8n") return "n8n";
-  // A pill is an agent, so its chip says which one. The session or model the
-  // adapter reported is the first step and rides the ticker, where it has room;
+  // The session or model the adapter reported rides the ticker, where it has room;
   // as a chip it was the same word twice ("Hermes hermes-aux").
   if (task.source === "agent") return agentName(task.id);
   return "Claude Code";
 }
 
 /**
- * The name on a card.
- *
- * A Claude Code card used to show the *folder* the session happened to be in,
- * so an approval asked from ~/…/coucou read "coucou needs permission" — as
- * though a project were the one asking. The card names the agent; the folder is
- * what the ticker and the ↗ button are for.
+ * The name on a card. A Claude Code card used to show the *folder* the session was
+ * in, so an approval asked from ~/…/coucou read "coucou needs permission" — as
+ * though a project were the one asking.
  */
 function whoName(task: AgentTask | null): string {
   if (!task) return "Claude Code";
@@ -211,9 +201,9 @@ function buildOverview(actions: ViewActions): ViewHost {
         mode = null;
       }
 
-      // A live session keeps the ticker; an integration pill shows its own card,
-      // exactly like IntegrationCardView. Agent pills are sessions, not pollers —
-      // without this they rendered as an empty integration card.
+      // A live session keeps the ticker; an integration pill shows its own card.
+      // Agent pills are sessions, not pollers — without this they rendered as an
+      // empty integration card.
       const sessionActive =
         task != null &&
         (task.id === "integration_claude" || task.source === "agent") &&
@@ -340,42 +330,34 @@ function buildApproval(actions: ViewActions): ViewHost {
     el,
     sync() {
       const approval = State.pendingApproval;
-      // AskUserQuestion rides in on PermissionRequest, but the hook protocol has no
-      // way to carry a multiple-choice answer — approving it just lets the terminal
-      // ask. Calling that "Allow" on a card that cannot approve anything is a lie
-      // the user pays for, so the button says where the answer actually goes.
+      // AskUserQuestion rides in on PermissionRequest, but the hook protocol cannot
+      // carry a multiple-choice answer — approving it just lets the terminal ask, so
+      // the button names where the answer actually goes.
       const isQuestion = approval?.tool === "AskUserQuestion";
       clear(who);
       who.append(agentWho(State.focusTask, isQuestion ? "is asking a question" : "needs permission"));
-      // The whole point of approving here rather than in the terminal: this line
-      // is the command, the file path or the URL being authorised — or, for a
-      // question, the question itself.
+      // The point of approving here rather than in the terminal: this line is the
+      // command, the file path or the URL being authorised.
       code.textContent = approval?.command || approval?.tool || "…";
-      // Two buttons, built once per mode. Rebuilding them between a mouse-down and
-      // a mouse-up would swallow the click, and there is nothing left to vary
-      // within a mode: "Always" is gone until the remembered-rules list exists to
-      // back it. The mode itself does change between cards, so it is part of the
-      // key rather than a separate rebuild on every sync.
+      // Built once per mode: rebuilding between mouse-down and mouse-up would
+      // swallow the click, and nothing varies within a mode. The mode does change
+      // between cards, so it is part of the key rather than a rebuild per sync.
       const key = isQuestion ? "question" : "permission";
       if (rowKey === key) return;
       rowKey = key;
       clear(row);
-      // The guidance rides in the button row rather than a row of its own: the
-      // card is 160 px tall (layout.ts), and a fourth child squeezed the
-      // question text — the one line on this card that must be readable — into a
-      // clipped half-height.
+      // The guidance rides in the button row: a fourth child squeezed the question
+      // text — the one line on this card that must be readable — into half height.
       if (isQuestion) row.append(h("div", { class: "sub", text: "Answer in your terminal." }));
-      // No key badges, and that is deliberate rather than unfinished. The island
-      // is a Dock window with `accept_focus(false)`, and a window manager will
-      // not hand the keyboard to one: a global X11 grab, `accept_focus(true)`
-      // and a temporary Dialog type hint were all tried, and none of them gets a
-      // keypress into WebKit on this desktop. A letter printed on a button that
-      // cannot be pressed is a promise the app breaks at the exact moment the
-      // user most needs it to hold.
+      // No key badges, deliberately: the island is a Dock window with
+      // accept_focus(false) and this desktop's window manager never hands it the
+      // keyboard — a global X11 grab, accept_focus(true) and a Dialog type hint
+      // were all tried. A letter on a button that cannot be pressed is a promise
+      // the app breaks exactly when the user needs it to hold.
       //
-      // A question cannot be answered from here at all, so it gets one button
-      // and a way home. A real approval gets the three choices it actually has:
-      // reject it, allow this once, or stop asking for the rest of the session.
+      // A question cannot be answered from here at all, so it gets one button and
+      // a way home. An approval gets the three choices it actually has: reject it,
+      // allow once, or stop asking for the rest of the session.
       row.append(
         btn(isQuestion ? "Cancel" : "Reject", "secondary", () => actions.decide("deny")),
         ...(isQuestion
@@ -487,8 +469,7 @@ function buildSettings(actions: ViewActions): ViewHost {
   }) as HTMLInputElement;
   const autoLabel = h("span", {});
   // The same five values Settings offers. It used to start at 10 s, so a user who
-  // set 5 s in the settings window came here to a segmented control with nothing
-  // highlighted and no way to tell whether the value had been lost.
+  // set 5 s came here to a segmented control with nothing highlighted.
   const AUTO_CLOSE_CHOICES = [5, 10, 15, 30, 60];
   const segButtons = AUTO_CLOSE_CHOICES.map((s) =>
     h("button", { onclick: () => actions.setAutoClose(s) }, `${s}s`),

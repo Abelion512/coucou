@@ -369,7 +369,6 @@ function drawMochi(x: CanvasRenderingContext2D, p: Pose) {
     x.restore();
   }
 
-  // Eyes
   x.save();
   x.clip(body);
   x.fillStyle = "#16171A";
@@ -403,7 +402,6 @@ function drawMochi(x: CanvasRenderingContext2D, p: Pose) {
   }
   x.restore();
 
-  // Activity badge
   if (p.badge > 0.01) {
     const br = hh * 0.3;
     x.save();

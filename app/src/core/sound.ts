@@ -1,7 +1,6 @@
-// SoundEngine — port of SoundEngine.swift.
-// The 28 WAVs are the macOS app's own files (see SOUNDS_DIR in vite.config.ts);
-// they are served at /sounds/<name>.wav. Default volume 0.12, slider range 0–0.2,
-// exactly like the Mac player, and several sounds may overlap.
+// SoundEngine — port of SoundEngine.swift. The 28 WAVs are the macOS app's own
+// files (SOUNDS_DIR in vite.config.ts), served at /sounds/<name>.wav. Several
+// sounds may overlap.
 
 export const SOUND_NAMES = [
   "peek", "open", "close", "hover", "blip", "slap", "annoyed", "dizzy", "greet",
@@ -34,10 +33,9 @@ class SoundEngine {
       master.gain.value = this.gainFor(this.volume);
       // The limiter is what lets the slider go past unity without turning into
       // noise — but only if it is set right. Web Audio caps `threshold` at
-      // 0 dBFS, so a limiter parked at -3 dB does not merely guard the peaks,
-      // it *quietens the whole sound*: typical material sits at -13 dBFS, lands
-      // above that threshold, and gets pulled down. That is why "max" felt weak
-      // even at gain 4. At 0 dB it only touches what is actually over full scale.
+      // 0 dBFS, so a limiter parked at -3 dB *quietens the whole sound*: typical
+      // material sits at -13 dBFS and gets pulled down. That is why "max" felt
+      // weak even at gain 4.
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = 0;
       limiter.knee.value = 0;
@@ -73,12 +71,9 @@ class SoundEngine {
   }
 
   /**
-   * Called when the island goes quiet. A running AudioContext keeps an audio
-   * thread and its render quantum alive even with nothing playing, which shows
-   * up as a steady trickle of CPU on a machine that is supposed to be idle.
-   *
-   * The delay covers the tail of whatever just played — suspending mid-sound
-   * would clip it — and `play()` resumes the context on its own.
+   * Called when the island goes quiet: a running AudioContext keeps an audio
+   * thread alive even with nothing playing. The delay covers the tail of whatever
+   * just played — suspending mid-sound would clip it — and `play()` resumes it.
    */
   idle() {
     if (!this.ctx || this.ctx.state !== "running" || this.idleTimer != null) return;
@@ -89,33 +84,26 @@ class SoundEngine {
   }
 
   setVolume(v: number) {
-    // SPEC §9 pins the *Mac* player at 0–0.2 and a 0.12 default. Those numbers
-    // only made sense against AVAudioPlayer and WAVs rendered at gain ×6; on
-    // Linux they put every sound at a fifth of the mixer's own ceiling, which is
-    // why "max" was inaudible. The Linux scale is this one, and docs/LINUX.md
-    // records the deviation.
+    // SPEC §9 pins the *Mac* player at 0–0.2 with a 0.12 default. Those numbers
+    // only made sense against AVAudioPlayer and WAVs rendered at gain ×6; on Linux
+    // they left "max" inaudible. docs/LINUX.md records the deviation.
     this.volume = Math.max(0, Math.min(1, v));
     if (this.master) this.master.gain.value = this.gainFor(this.volume);
   }
 
   /**
-   * Slider 0–1 → gain, and gain goes well past 1.
+   * Slider 0–1 → gain, and the gain goes well past 1. A Web Audio gain of 1 means
+   * "a full-scale source", which is still only as loud as the mixer allows, and
+   * the 28 sounds peak at -13 dBFS on average — a gain of 1 plays them a seventh
+   * of full volume, which is the "max" that was inaudible across a desk.
    *
-   * A Web Audio gain of 1 means "a full-scale source", which is still only as
-   * loud as the system mixer allows. Measured on this machine: the 28 sounds
-   * peak at -13 dBFS on average, so a gain of 1 would play them a seventh of
-   * full volume — the "max" that was inaudible across a desk.
-   *
-   * The gain tops out at 12 (+22 dB), which puts a typical sound right at full
-   * scale and lets the limiter hold the peaks there instead of clipping them.
-   * That is the physical ceiling for this path: PulseAudio will not amplify
-   * past 100 % unless the session carries the `overamplification` flag, which
-   * is a GNOME setting Cinnamon does not offer, so nothing after the gain can
-   * make the sound louder than a full-scale sample. Past this point only the
-   * system volume can help.
+   * 12 (+22 dB) puts a typical sound at full scale and lets the limiter hold the
+   * peaks there. That is the ceiling for this path: PulseAudio will not amplify
+   * past 100 % unless the session carries `overamplification`, a GNOME setting
+   * Cinnamon does not offer. Past this point only the system volume can help.
    *
    * The curve is not linear: the quiet half of the slider should stay quiet, so
-   * it is where the exponential does its work.
+   * that is where the exponential does its work.
    */
   private gainFor(v: number): number {
     return Math.pow(v, 1.6) * 12;

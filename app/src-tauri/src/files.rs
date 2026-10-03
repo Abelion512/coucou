@@ -53,8 +53,8 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
 
     std::fs::copy(src, &dest).map_err(|e| format!("cannot copy: {e}"))?;
     // CopyFileEx carries the source's timestamps across, so a file last edited
-    // three years ago would arrive already older than the sweep window and be
-    // deleted on the spot. The inbox ages from when *we* copied it.
+    // three years ago would arrive older than the sweep window. The inbox ages
+    // from when *we* copied it.
     if let Ok(file) = std::fs::File::options().write(true).open(&dest) {
         let _ = file.set_modified(SystemTime::now());
     }
@@ -67,9 +67,8 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
     })
 }
 
-/// Drops anything copied here more than a week ago. `ingest` stamps every copy
-/// with the time it landed, so this really is the age of the copy and not the
-/// age of whatever the user happened to drag in.
+/// Drops anything copied here more than a week ago. `ingest` stamps every copy, so
+/// this is the age of the copy, not of whatever the user happened to drag in.
 fn sweep(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let now = SystemTime::now();

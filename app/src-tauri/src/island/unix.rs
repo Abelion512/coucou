@@ -9,20 +9,13 @@ use std::sync::OnceLock;
 ///
 /// The `mouse_position` crate looks like a thin wrapper and is not: every call
 /// dlopens libX11, opens a display, reads the Xauthority file, queries the
-/// pointer and tears the whole thing down again. Measured on this machine at
-/// 471–838 µs per call, which at 60 Hz is 28–50 ms of CPU *every second* while the
-/// island is visible — 3–5 % of a core, permanently, for one integer pair.
+/// pointer and tears it all down again — measured here at 471–838 µs, which at
+/// 60 Hz is 3–5 % of a core, permanently, for one integer pair. Holding the
+/// display open and asking only `XQueryPointer` costs 47 µs.
 ///
-/// Holding the display open and asking only `XQueryPointer` costs 47 µs, ~18×
-/// cheaper. The poll thread is the only user of this connection and X11 is
-/// fine with one thread on one display as long as calls are serialised, which
-/// they are: `cursor_physical` is called from exactly one thread.
-/// The raw Xlib display pointer is not `Send`/`Sync`, and it is genuinely not
-/// thread-safe — Xlib requires all calls on one display to be serialised. That
-/// is exactly the contract here: `cursor_physical` is called from the poll thread
-/// and nowhere else, so the pointer is wrapped to say so rather than being made
-/// `unsafe impl` without the evidence. The `Mutex` makes the guarantee
-/// mechanical instead of a comment.
+/// Xlib needs every call on one display serialised, and the raw pointer is not
+/// `Send`. `cursor_physical` is called from exactly one thread, so the pointer is
+/// wrapped to say so, and the `Mutex` makes that guarantee mechanical.
 struct Cursor {
     x11: &'static x11_dl::xlib::Xlib,
     display: *mut x11_dl::xlib::Display,

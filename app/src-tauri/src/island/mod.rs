@@ -1,12 +1,11 @@
-// Island window: placement on the chosen display, the two window sizes
-// (full panel / invisible wake strip), click-through and the cursor poll.
+// Island window: placement on the chosen display, the two window sizes (full
+// panel / invisible wake strip), click-through and the cursor poll. There is no
+// notch on a PC, so the island is a black shape drawn at the top centre of the
+// main display inside a borderless, transparent, always-on-top window that never
+// takes focus.
 //
-// There is no notch on a PC, so the island is a black shape drawn at the top
-// centre of the main display inside a borderless, transparent, always-on-top
-// window that never takes focus.
-//
-// Everything here is platform-neutral; the few calls that need a windowing
-// system live in `unix.rs` (GTK/X11).
+// Everything here is platform-neutral; the calls that need a windowing system
+// live in `unix.rs` (GTK/X11).
 
 mod unix;
 
@@ -171,8 +170,8 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
 
 /// CSS-pixel size the webview last reported, and the physical size that produced
 /// it. GTK's scale factor is unreliable at startup — on a 1.25× display both
-/// `Monitor::scale_factor` and `Window::scale_factor` reported 1.0 — so the webview
-/// measures itself and the correction lands here. See `note_viewport`.
+/// `Monitor::scale_factor` and `Window::scale_factor` reported 1.0 — so the
+/// webview measures itself. See `note_viewport`.
 static VIEWPORT: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 
 /// Physical width `apply_geometry` last asked for. Paired with the CSS width the
@@ -182,21 +181,19 @@ static LAST_PHYSICAL_W: Mutex<u32> = Mutex::new(0);
 /// Where the island window was actually put, in physical screen coordinates, and
 /// the scale it was sized with.
 ///
-/// Both of these are *what we asked for*, not what GTK reports back. On this
-/// machine `Window::outer_position` returned y=11 for a window that is at y=45 —
-/// 34 px off, which is roughly the Cinnamon panel — and `Window::scale_factor`
-/// returned 1.0 on a 1.25× display. Feeding either one into the cursor maths made
-/// the hit test disagree with the island by tens of pixels, so the island never
-/// took the mouse and every click fell through to the window behind. The window is
-/// not user-movable, so the position we set is the position it has.
+/// Both are *what we asked for*, not what GTK reports back: on this machine
+/// `Window::outer_position` returned y=11 for a window at y=45, and
+/// `Window::scale_factor` returned 1.0 on a 1.25× display. Feeding either into the
+/// cursor maths made the hit test disagree with the island by tens of pixels, so
+/// every click fell through to the window behind. The window is not user-movable,
+/// so the position we set is the position it has.
 static PLACED: Mutex<(i32, i32, f64)> = Mutex::new((0, 0, 1.0));
 
 /// Records the CSS size the webview actually got.
 ///
-/// The scale is derived from *physical ÷ CSS*, never from *requested ÷ CSS*: the
-/// correction itself makes the webview report the size we asked for, so a
-/// requested-based ratio re-reads its own output and slides back to 1.0 on the next
-/// resize — the island clipped itself again after one frame of looking correct.
+/// The scale is derived from *physical ÷ CSS*, never *requested ÷ CSS*: the
+/// correction makes the webview report the size we asked for, so a
+/// requested-based ratio re-reads its own output and slides back to 1.0.
 pub fn note_viewport(css_w: f64, css_h: f64) {
     if css_w <= 0.0 || css_h <= 0.0 {
         return;
@@ -222,22 +219,20 @@ fn scale_hint(win: &WebviewWindow, m: &Monitor) -> f64 {
 
 /// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
 ///
-/// The scale factor used here is the one the webview reported (see `VIEWPORT`),
-/// falling back to GTK's. Getting this wrong does not merely move the island: it
-/// makes the window smaller than the layout, and the island is then clipped.
+/// The scale factor is the one the webview reported (see `VIEWPORT`), falling back
+/// to GTK's: getting it wrong does not merely move the island, it makes the window
+/// smaller than the layout and the island is clipped.
 pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
 
     let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
 
-    // The work area, not the monitor rect. Every desktop has a panel, and on this
-    // one it is exactly where a notch would be — Cinnamon puts the clock and the
-    // notification centre in the middle of the top edge. Drawn at the monitor's y,
-    // the island sat underneath it: invisible, and its header (the home / chat /
-    // upload / sound / settings buttons) hidden behind the panel. The work area is
-    // the monitor minus whatever the desktop reserves, so the island lands just
-    // below the panel on Cinnamon, GNOME and anything else, with no per-DE config.
+    // The work area, not the monitor rect: every desktop has a panel, and on this
+    // one it sits exactly where a notch would be — Cinnamon puts the clock in the
+    // middle of the top edge. Drawn at the monitor's y, the island was under it,
+    // header and all. The work area is the monitor minus whatever the desktop
+    // reserves, so the island lands below the panel with no per-DE config.
     let wa = *m.work_area();
     let mp = wa.position;
     let ms = wa.size;
@@ -247,12 +242,10 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let x = mp.x + (ms.width as i32 - pw as i32) / 2;
 
     let _ = win.set_position(PhysicalPosition::new(x, mp.y));
-    // GTK never sizes a non-resizable window below its natural size (200 px
-    // here), so the 6 px wake strip would stay a 200 px block that eats clicks
-    // meant for whatever is under the top of the screen. tao re-applies the
-    // config's `resizable: false` after the first configure, so this is asked
-    // every time, just before the resize. Undecorated, the window still offers
-    // the user nothing to resize it by. (Found by @YossiYad, #44, upstream.)
+    // GTK never sizes a non-resizable window below its natural size (200 px here),
+    // so the 6 px wake strip would stay a 200 px block eating clicks meant for the
+    // top of the screen. tao re-applies `resizable: false` after the first
+    // configure, so this is asked every time. (@YossiYad, #44, upstream.)
     let _ = win.set_resizable(true);
     let _ = win.set_size(PhysicalSize::new(pw, ph));
 
@@ -282,10 +275,10 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
         // moment the island comes back.
         let mut last_screen: Option<(i32, i32, u32, u32, u64)> = None;
         // Consecutive polls that could not read a cursor. Wayland has no global
-        // pointer position, so on it this loop only watches the display layout —
-        // and waking 60×/s to discover that every time costs CPU for nothing.
-        // Upstream solves this with a compile-time flag; measuring it costs
-        // nothing and also covers X11 sessions where the query simply fails.
+        // pointer position, so there this loop only watches the display layout, and
+        // waking 60×/s to rediscover that costs CPU for nothing. Upstream solves
+        // this with a compile-time flag; measuring it also covers X11 sessions
+        // where the query simply fails.
         let mut blind = 0u32;
         loop {
             gate.wait_until_active();
@@ -295,10 +288,9 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 let (period, screen_every) = if blind > BLIND_TICKS { (500, 1) } else { (16, 30) };
                 std::thread::sleep(Duration::from_millis(period));
 
-                // Monitors get plugged in, unplugged, rearranged and rescaled, and
-                // an island pinned to coordinates that no longer exist is an island
-                // nobody can reach. Checked about twice a second — the cursor poll
-                // is already running, so this costs one monitor query.
+                // Monitors get plugged in, unplugged and rescaled, and an island
+                // pinned to coordinates that no longer exist is one nobody can
+                // reach. Twice a second; the cursor poll is already running.
                 ticks = ticks.wrapping_add(1);
                 if ticks.is_multiple_of(screen_every) {
                     let now = current_screen_key(&app);

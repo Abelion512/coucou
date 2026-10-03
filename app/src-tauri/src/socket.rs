@@ -9,14 +9,13 @@
 // Claude Code is never blocked by us. Three things guarantee it:
 //   * coucou-hook gives the connection 300 ms and exits cleanly if we are closed;
 //   * we only wait for a human once the island has *confirmed* the card is on
-//     screen, so a paused island or a webview that is not listening costs a few
-//     hundred milliseconds, not two minutes;
-//   * whatever happens we drop the connection after the decision timeout, and
-//     the terminal takes over.
+//     screen, so a paused island or an unsubscribed webview costs a few hundred
+//     milliseconds, not two minutes;
+//   * whatever happens we drop the connection after the decision timeout.
 //
-// What we write back is the bare word `allow` or `deny`. Turning that into the
-// documented hookSpecificOutput JSON is coucou-hook's job, so the wire format
-// Claude Code expects lives in exactly one place.
+// What we write back is the bare word `allow` or `deny`; coucou-hook turns that
+// into the documented hookSpecificOutput JSON, so the wire format Claude Code
+// expects lives in exactly one place.
 
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
@@ -36,9 +35,8 @@ use crate::log;
 /// Slightly under coucou-hook's own 110 s wait, so we always answer first.
 const DECISION_TIMEOUT: Duration = Duration::from_secs(108);
 /// How long the island gets to say "the card is up". This is the whole point:
-/// without it, an island that is paused, hidden behind a crashed webview or
-/// simply not listening would leave Claude Code staring at a prompt nobody can
-/// see for nearly two minutes.
+/// without it, a paused island or an unsubscribed webview would leave Claude Code
+/// staring at a prompt nobody can see for nearly two minutes.
 const ACK_TIMEOUT: Duration = Duration::from_millis(800);
 const MAX_PAYLOAD: usize = 1 << 20;
 /// A client that stops writing is dropped after this long.
@@ -91,13 +89,12 @@ pub fn start(app: AppHandle) {
                 log::line("cannot create the relay socket directory");
                 return;
             }
-            // 0700 — not world-readable, as the macOS port hardened it.
-            //
-            // Only ever on a directory whose own name is ours. The fallback path
-            // puts the socket directly in /tmp, and chmod'ing /tmp to 0700 as root
-            // (an AppImage in a container, say) locks out every other user on the
-            // machine, permanently, for a socket that does not need it: the socket
-            // file itself is already 0600 and the peer is checked by SO_PEERCRED.
+            // 0700 — not world-readable, as the macOS port hardened it. Only ever
+            // on a directory whose own name is ours: the fallback path puts the
+            // socket directly in /tmp, and chmod'ing /tmp to 0700 as root (an
+            // AppImage in a container, say) locks out every other user on the
+            // machine, permanently, for a socket that does not need it — the file
+            // is already 0600 and the peer is checked by SO_PEERCRED.
             if dir.file_name().map(|n| n == "coucou").unwrap_or(false) {
                 let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
             }

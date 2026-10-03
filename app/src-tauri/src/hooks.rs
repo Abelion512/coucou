@@ -1,9 +1,9 @@
 // Claude Code hook installation.
 //
-// The rule from CLAUDE.md is strict and is followed to the letter:
-// read %USERPROFILE%\.claude\settings.json, take a dated backup, merge without
-// touching anybody else's hooks, show the diff, and write only after an explicit
-// click. Uninstall removes Coucou's entries and nothing else.
+// The rule from AGENTS.md is strict and is followed to the letter: read
+// ~/.claude/settings.json, take a dated backup, merge without touching anybody
+// else's hooks, show the diff, and write only after an explicit click. Uninstall
+// removes Coucou's entries and nothing else.
 //
 // The command is the quoted relay path plus the event name — one shell-agnostic
 // word, so it behaves the same whatever shell Claude Code spawns hooks with.
@@ -66,12 +66,10 @@ pub fn settings_path() -> PathBuf {
     home().join(".claude").join("settings.json")
 }
 
-/// Reads `~/.claude/settings.json`.
-///
-/// The only error that means "start from nothing" is the file not being there.
-/// Everything else — a lock held by another process, a permission problem, JSON
-/// we cannot parse — is reported, because the alternative is treating somebody's
-/// unreadable settings as an empty object and then writing that back over them.
+/// Reads `~/.claude/settings.json`. The only error that means "start from nothing"
+/// is the file not being there: a lock, a permission problem or unparseable JSON is
+/// reported, because the alternative is treating somebody's unreadable settings as
+/// an empty object and writing that back over them.
 fn read_settings() -> Result<Value, String> {
     let path = settings_path();
     match std::fs::read(&path) {
@@ -272,10 +270,10 @@ pub fn preview(install: bool) -> Result<HookPreview, String> {
 
 /// Writes the merged (or cleaned) settings after taking a dated backup.
 ///
-/// `fingerprint` is the one the preview was computed from. If the file changed
-/// in between — another tool, another window, the user's own editor — we stop
-/// and make them look at a fresh diff, because the only thing worse than not
-/// installing the hooks is silently reverting somebody else's edit.
+/// `fingerprint` is the one the preview was computed from. If the file changed in
+/// between — another tool, another window, the user's own editor — we stop and
+/// make them look at a fresh diff: silently reverting somebody else's edit is
+/// worse than not installing the hooks.
 pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
     let path = settings_path();
     let dir = path.parent().unwrap_or(Path::new("."));
@@ -313,15 +311,12 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
 
 /// Copies the coucou-hook relay into ~/.local/share/coucou/bin on launch.
 ///
-/// In a bundled install it comes from the app resources; in `tauri dev` it sits
-/// next to the coucou binary in the workspace target directory.
-///
-/// Every candidate is tried rather than just the first, because getting this
-/// wrong is silent and fatal: `resources` used to be the bare path, and Tauri
-/// preserves a path's structure, so `../target/release/coucou-hook` landed as
-/// `$RESOURCE/_up_/target/release/coucou-hook` — a path nothing looked in. The
-/// config now maps it to `$RESOURCE/coucou-hook` (first candidate); the rest
-/// only exist for `tauri dev`, where no resources are bundled at all.
+/// Every candidate is tried rather than just the first, because getting this wrong
+/// is silent and fatal: `resources` used to be the bare path, and Tauri preserves
+/// a path's structure, so `../target/release/coucou-hook` landed as
+/// `$RESOURCE/_up_/target/release/coucou-hook`, a path nothing looked in. The
+/// config now maps it to `$RESOURCE/coucou-hook` (first candidate); the rest exist
+/// for `tauri dev`, where no resources are bundled at all.
 pub fn ensure_hook_exe(app: &AppHandle) {
     let dest = settings::hook_exe_path();
     let Some(dir) = dest.parent() else { return };
@@ -352,15 +347,14 @@ pub fn ensure_hook_exe(app: &AppHandle) {
         return;
     };
 
-    // Same bytes as what is already installed: leave it alone. Comparing
-    // content rather than size and mtime is the point — a hook fires many
-    // times a minute and can be executing this file while we decide.
+    // Same bytes as what is already installed: leave it alone. Comparing content
+    // rather than size and mtime is the point — a hook fires many times a minute
+    // and can be executing this file while we decide.
     if same_contents(&src, &dest) {
         return;
     }
-    // Write beside it and rename: a running hook keeps the inode it mapped, so
-    // a replacement can never pull the file out from under it. A plain copy
-    // truncates in place, which is how a Claude Code session dies on ETXTBSY.
+    // Write beside it and rename: a running hook keeps the inode it mapped. A
+    // plain copy truncates in place, which is how a session dies on ETXTBSY.
     let temp = dir.join(format!(".{hook_name}.new"));
     let installed = std::fs::copy(&src, &temp)
         // The relay runs hooks with the user's privileges and talks to a socket

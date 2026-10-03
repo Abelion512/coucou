@@ -20,9 +20,8 @@ use tokio::sync::mpsc::Sender;
 use super::{Agent, AgentEvent, AgentState};
 use crate::log;
 
-/// Poll cadence. Five seconds is coarse but the state it produces is coarse too,
-/// and an agent that is merely running does not need to be tracked to the
-/// millisecond.
+/// Poll cadence. Five seconds is coarse, but so is the state it produces, and an
+/// agent that is merely running does not need millisecond tracking.
 const TICK: Duration = Duration::from_secs(5);
 
 /// Whether a live session or a relaunch was seen on the last tick. The poll
@@ -172,9 +171,9 @@ pub fn healthy() -> bool {
     LIVE.load(Ordering::Relaxed)
 }
 
-/// Same flag as `healthy` here — for Freebuff the two coincide, because the only
-/// thing that makes this adapter useful is a live session. The Settings screen
-/// still asks both, so every adapter reports the same shape.
+/// Same flag as `healthy`: for Freebuff the two coincide, because a live session is
+/// the only thing that makes this adapter useful. Settings asks both of every
+/// adapter, so they all report the same shape.
 pub fn busy() -> bool {
     LIVE.load(Ordering::Relaxed)
 }

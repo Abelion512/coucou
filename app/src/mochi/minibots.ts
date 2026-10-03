@@ -15,13 +15,11 @@ interface MiniBot {
 const live = new Map<HTMLCanvasElement, MiniBot>();
 
 /**
- * Creates a mini Mochi whose **body** is `bodySize` CSS pixels across.
- *
- * The engine draws the body at 60 % of its canvas, so the canvas is
- * `bodySize / 0.6` and is centred in a `bodySize` slot, overflowing it — the
- * same thing SwiftUI does with a `.frame(width: 22/0.6)` inside a
- * `.frame(width: 22)`. Sizing the canvas itself to `bodySize` would shrink the
- * whole drawing to 60 %, which is what used to happen.
+ * A mini Mochi whose **body** is `bodySize` CSS pixels across. The engine draws
+ * the body at 60 % of its canvas, so the canvas is `bodySize / 0.6`, centred in a
+ * `bodySize` slot and overflowing it — what SwiftUI does with a `.frame(22/0.6)`
+ * inside a `.frame(22)`. Sizing the canvas itself to `bodySize` shrinks the whole
+ * drawing to 60 %, which is what used to happen.
  */
 export function createMiniBot(task: AgentTask, bodySize: number): HTMLElement {
   const slot = document.createElement("span");
@@ -78,13 +76,12 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
 export function tickMiniBots(dt: number) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   for (const mb of live.values()) {
-    // Only up to four mini bots are ever on screen — the pill grid, or the compact
-    // grid, never both — and the off-view ones are `opacity: 0` rather than
+    // Up to four mini bots are on screen — the pill grid or the compact grid,
+    // never both — and the off-view ones are `opacity: 0` rather than
     // `display: none`, so they were being drawn into the void every frame.
     if (!mb.canvas.isConnected) continue;
     if (!isVisible(mb.canvas)) continue;
-    // An engine with nothing animating needs no redraw; the island's own loop
-    // already trusts `busy` for its stop condition.
+    // An engine with nothing animating needs no redraw.
     if (!mb.engine.busy) continue;
     const ctx = mb.ctx ?? (mb.ctx = mb.canvas.getContext("2d"));
     if (!ctx) continue;

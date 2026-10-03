@@ -1,6 +1,5 @@
 // Island geometry — ported from IslandTypes.swift + IslandWindowController.islandSize
-// + IslandRootView.botPosition. All values are logical pixels, identical to the
-// macOS app's points.
+// + IslandRootView.botPosition. All values are logical pixels, as on macOS.
 
 export type IslandMode = "hidden" | "compact" | "expanded";
 

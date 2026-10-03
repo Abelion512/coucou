@@ -140,13 +140,11 @@ class AppState {
   pendingApproval: ApprovalInfo | null = null;
 
   /**
-   * "Allow for the rest of this session", per Claude Code session.
-   *
-   * Keyed on the tool *and* what it was asked to do, because "always allow
-   * Bash" is how an agent ends up running anything, and "always allow
-   * `git status`" is what a person means when they click it. In memory only:
-   * restarting Coucou forgets every rule, and ~/.claude/settings.json is never
-   * touched, so nothing here outlives the session it was granted in.
+   * "Allow for the rest of this session", per Claude Code session. Keyed on the
+   * tool *and* what it was asked to do: "always allow Bash" is how an agent ends
+   * up running anything, and "always allow `git status`" is what a person means.
+   * In memory only — restarting forgets every rule, and ~/.claude/settings.json
+   * is never touched.
    */
   private sessionAllow = new Map<string, Set<string>>();
 

@@ -93,8 +93,8 @@ where
             ticker.tick().await;
             // The ticker keeps its cadence; we just decline to do the work. An
             // integration the user switched off, or a paused app, must make no
-            // network calls at all — CLAUDE.md allows talking only to services
-            // the user configured, and a disabled one is not configured.
+            // network calls at all — AGENTS.md allows talking only to services the
+            // user configured, and a disabled one is not configured.
             if PAUSED.load(Ordering::Relaxed) || !enabled(&app, id) {
                 continue;
             }
@@ -103,12 +103,10 @@ where
     });
 }
 
-/// One-shot refresh from the Refresh buttons in the island.
-///
-/// Honours pause and the per-integration switch, like every scheduled poll. It is
-/// reachable from a webview command, and "paused means Coucou makes no network
-/// requests" is a promise the user can see honoured in the tray — a manual path
-/// that skipped the check would quietly break it.
+/// One-shot refresh from the Refresh buttons in the island. Honours pause and the
+/// per-integration switch like every scheduled poll: it is reachable from a webview
+/// command, and a manual path that skipped the check would quietly break the
+/// promise the tray makes.
 pub async fn poll_once(app: AppHandle, id: &str) {
     if PAUSED.load(Ordering::Relaxed) || !enabled(&app, id) {
         return;

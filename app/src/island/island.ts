@@ -1,5 +1,5 @@
-// The island: DOM shell, sizing animation, Mochi placement, mouse handling.
-// Mirrors IslandRootView.swift + IslandWindowController.swift.
+// The island: DOM shell, sizing, Mochi placement, mouse. Port of IslandRootView.swift
+// + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
@@ -34,11 +34,9 @@ const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 :
 
 /**
  * Width the island is centred in, in CSS px — the window's real inner width.
- *
- * PANEL_W is what we ask Rust for; on a display whose scale factor is not 1 the
- * window comes back narrower in CSS px than we requested (720 physical at 1.25×
- * is a 576 CSS px viewport), and centring in 720 clipped the 640 px island. The
- * live value is the only one that can be right, so fall back to the request.
+ * PANEL_W is what we ask Rust for, but on a scaled display the window comes back
+ * narrower than requested (720 physical at 1.25× is a 576 CSS px viewport), and
+ * centring in 720 clipped the island. Fall back to the request.
  */
 function panelWidth(): number {
   const w = window.innerWidth;
@@ -71,16 +69,14 @@ export class Island {
   private botCy = new Spring(16);
   private botSize = new Spring(10);
 
-  // Last geometry / glow actually written to the DOM. The frame loop runs at
-  // 60 Hz but these only change while something moves; writing them every frame
-  // invalidated style and layout in WebKitGTK for nothing.
+  // Last geometry / glow actually written to the DOM. Every WebKitGTK style write
+  // invalidates style and layout, and these only change while something moves.
   private geom: { w: number; h: number; r: number; miniLeft: number; miniTop: number; sideLeft: number } | null = null;
   private glow: { shown: boolean; d: number; cx: number; cy: number; color: string; opacity: number } | null = null;
   private botVisible: boolean | null = null;
   private uploadShown = false;
   /** Window width in CSS px, so a resize re-centres instead of clipping. */
   private panelPx = 0;
-  // Memoised style writes and the canvas context, for the same reason as `geom`.
   private botPos: { left: number; top: number } | null = null;
   private botCtx: CanvasRenderingContext2D | null = null;
   /** Last width written to the countdown bar, so idle frames write nothing. */
@@ -168,11 +164,8 @@ export class Island {
         void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
         if (!req) return;
         Sound.play(d === "deny" ? "blip" : "approve");
-        // "Always" is remembered here, not in ~/.claude/settings.json. Claude Code
-        // is only told `allow` — the relay's own contract already said so — and
-        // Coucou keeps the rule for the rest of the Claude Code session, in memory.
-        // Nothing on disk changes and nothing survives a restart, which is exactly
-        // what "for this session" should mean.
+        // "Always" is kept here, in memory, per Claude Code session — never in
+        // ~/.claude/settings.json. Nothing on disk changes, nothing survives a restart.
         if (d === "always") State.rememberApproval(req.sessionId, req.tool, req.command);
         void Bridge.approvalDecision(req.requestId, d);
         State.pendingApproval = null;
@@ -217,8 +210,7 @@ export class Island {
     for (const v of this.views.values()) this.viewsEl.append(v.el);
     this.contentEl = h("div", { id: "content" }, this.header.el, this.viewsEl);
 
-    // The drop sequence draws the card, the bar and its own Mochi. It sits under
-    // the header, which stays visible on top of it exactly as on macOS.
+    // The drop sequence draws its own card, bar and Mochi, under the header.
     this.uploadCanvas = new UploadCanvas({
       ask: () => {
         State.promptContext = State.droppedFile
@@ -303,9 +295,8 @@ export class Island {
     }
     if (mode !== "expanded") {
       this.engine.resetMorph();
-      // Nothing can be seen of the sequence once the island is shut, and leaving
-      // it running would keep the frame loop awake — the island must cost
-      // nothing while hidden.
+      // Nothing can be seen of the sequence once the island is shut, and leaving it
+      // running would keep the frame loop awake — 0 % CPU while hidden is a rule.
       UploadSeq.deactivate();
     }
     this.updateWindowCollapsed();
@@ -352,9 +343,8 @@ export class Island {
   collapse() {
     State.isPinned = false;
     this.fsm.pinned = false;
-    // Drive the state machine rather than the mode: setting the mode behind its
-    // back left it thinking the island was still open, and a click on the compact
-    // island then did nothing — the island could never be reopened.
+    // Drive the state machine rather than the mode: setting the mode behind its back
+    // left it thinking the island was still open, so it could never be reopened.
     this.fsm.forcePetit();
   }
 
@@ -385,8 +375,8 @@ export class Island {
         if (State.fileDragOver) return;
         State.fileDragOver = true;
         this.engine.animateMorph(1);
-        // enterZone must run before the island expands, so the sequence is
-        // already active by the time the view becomes `upload`.
+        // enterZone must run before the island expands, so the sequence is already
+        // active by the time the view becomes `upload`.
         UploadSeq.enterZone(State.mouseInIsland.x, State.mouseInIsland.y);
         this.alert("upload");
         break;
@@ -508,16 +498,14 @@ export class Island {
     const w = this.width.value;
     const hh = this.height.value;
     const r = this.radius.value;
-    // Style writes are the expensive part of a frame in WebKitGTK: every one
-    // invalidates style and layout. Geometry only moves while something is
-    // animating, so remember what we last wrote and write nothing new on the
-    // frames where nothing changed.
+    // A WebKitGTK style write invalidates style and layout, and geometry only moves
+    // while something animates: write nothing on the frames where nothing changed.
     const miniLeft = w - 40 - 14.5;
     const miniTop = hh / 2 - 14.5;
     const sideLeft = (w - EXPANDED_W) / 2;
     if (this.panelPx !== panelWidth()) {
-      // The window was resized (scale factor, display change): the island has to
-      // be re-centred in the new width, and the side canvases follow it.
+      // The window was resized (scale factor, display change): re-centre the island
+      // in the new width; the side canvases follow it.
       this.panelPx = panelWidth();
       this.geom = null;
     }
@@ -527,8 +515,7 @@ export class Island {
       this.islandEl.style.height = `${hh}px`;
       this.islandEl.style.borderRadius = `0 0 ${r}px ${r}px`;
       this.islandEl.style.transform = `translateX(-50%)`;
-      // These follow the island as it resizes, so they belong here rather than in
-      // the state-driven DOM sync.
+      // These follow the island as it resizes, not the state.
       this.miniGrid.style.left = `${miniLeft}px`;
       this.miniGrid.style.top = `${miniTop}px`;
       this.greetingCanvas.style.left = `${sideLeft}px`;
@@ -603,8 +590,8 @@ export class Island {
 
     void onDragDrop((e) => this.onDragDrop(e));
 
-    // Outside Tauri (plain browser) drive the cursor from DOM events so the
-    // island can be inspected with `npm run dev`.
+    // Outside Tauri, drive the cursor from DOM events so the island can be
+    // inspected in a plain browser.
     if (!IS_TAURI) {
       window.addEventListener("mousemove", (e) => this.onCursor(e.clientX, e.clientY));
     }
@@ -616,8 +603,8 @@ export class Island {
     const rect = this.islandRect();
     State.mouseInIsland = { x: x - rect.x, y: y - rect.y };
 
-    // The drop sequence is fed from the cursor poll — X11 gives no position
-    // mid-drag that the webview could read, so the poll runs throughout.
+    // The drop sequence is fed from this poll: X11 gives the webview no mid-drag
+    // position of its own, so it runs throughout the drag.
     if (UploadSeq.isActive && !UploadSeq.dropped) {
       UploadSeq.updateCursor(State.mouseInIsland.x, State.mouseInIsland.y);
     }
@@ -639,7 +626,6 @@ export class Island {
     }
     this.wasInIsland = inIsland;
 
-    // Bot hover → love
     const overBot = State.mode === "expanded" && State.stateOverride == null && this.isBotHit(x, y);
     if (overBot && !this.botHovering) this.botHoverIn(x, y);
     if (!overBot && this.botHovering) this.cancelBotHover();
@@ -747,8 +733,8 @@ export class Island {
         this.greeting.draw(gctx);
       }
     } else {
-      // Kept running even while the drop canvas is up, so the island's own Mochi
-      // is already in the right place the moment the canvas fades out.
+      // Kept running even while the drop canvas is up, so the island's own Mochi is
+      // already in the right place the moment the canvas fades out.
       this.drawBot(dt);
     }
 
@@ -765,12 +751,9 @@ export class Island {
     if (UploadSeq.isActive) this.stepSequence();
     this.updateCountdown(nowMs);
 
-    // Nothing is drawn while the island is hidden, so nothing may keep the loop
-    // alive either. This used to read `... || this.engine.busy || State.mode !==
-    // "hidden"`, and engine.busy is permanently true for any state with a
-    // looping animation — breathing, ratelimit sweat, sleeping z's, the search
-    // sweep — so a hidden island went on burning frames in exactly the states it
-    // spends most of its life in. Geometry still has to finish retracting.
+    // Nothing may keep the loop alive while hidden: engine.busy is permanently true
+    // for every looping state (breathing, sweat, sleeping z's), and this used to burn
+    // frames on a hidden island in exactly the states it lives in.
     const settling =
       this.width.animating || this.height.animating || this.radius.animating;
     const busy = State.mode === "hidden"
@@ -810,8 +793,8 @@ export class Island {
     const cy = this.botCy.value;
     const color = showGlow ? botGlowColor(State.effectiveState) : "";
     const opacity = showGlow ? botGlowOpacity(State.effectiveState) : 0;
-    // Same reasoning as applyGeometry: the gradient is a fresh string every
-    // frame otherwise, and six style writes invalidate layout 60 times a second.
+    // Same as applyGeometry: the gradient is a fresh string every frame, and six
+    // style writes a frame invalidate layout 60 times a second.
     const glow = this.glow;
     if (!glow || glow.shown !== showGlow || glow.d !== d || glow.cx !== cx || glow.cy !== cy || glow.color !== color || glow.opacity !== opacity) {
       this.glow = { shown: showGlow, d, cx, cy, color, opacity };
@@ -843,8 +826,7 @@ export class Island {
       // Resizing a canvas clears it, so the context has to be re-fetched.
       this.botCtx = null;
     }
-    // Same reasoning as applyGeometry: a style write invalidates style and layout
-    // on WebKitGTK, and these two values are constant whenever Mochi has settled.
+    // Same as applyGeometry: both values are constant once Mochi has settled.
     const left = this.botCx.value - w / 2;
     const top = this.botCy.value - BOT_OVERHANG / 2 - hCss / 2;
     if (this.botPos?.left !== left || this.botPos?.top !== top) {
@@ -890,10 +872,8 @@ export class Island {
   }
 
   private updateCountdown(nowMs: number) {
-    // The early return used to write "0px" on every frame of the entire
-    // collapsed and hidden lifecycle — 60 style invalidations a second for a bar
-    // that is not there. Writing only on change is the rule the rest of this file
-    // already follows.
+    // The early return used to write "0px" every frame of the collapsed lifecycle;
+    // writing only on change is the rule the rest of this file follows.
     let width = "0px";
     if (State.mode === "expanded" && !State.isPinned && this.homeCollapseAt != null) {
       const autoClose = State.settings.autoCloseInterval;
@@ -916,9 +896,8 @@ export class Island {
     const greetingActive = expanded && State.view === "greeting";
 
     this.contentEl.style.opacity = expanded && !greetingActive ? "1" : "0";
-    // Folded or hidden, the views are out of sight but still in the page: what
-    // moves in them on its own stops (see #content.away in style.css), and
-    // picks up when the island unfolds (#56).
+    // Folded or hidden, the views are out of sight but still in the page: their own
+    // animation stops (#content.away in style.css) and picks up when it unfolds (#56).
     this.contentEl.classList.toggle("away", !expanded);
     this.contentEl.style.pointerEvents = expanded && !greetingActive ? "auto" : "none";
     this.greetingCanvas.style.display = greetingActive ? "block" : "none";
@@ -930,8 +909,8 @@ export class Island {
       if (on) view.sync();
     }
 
-    // The chat is the only view with a text field, so it is the only time the
-    // island is allowed to take keyboard focus.
+    // The chat is the only view with a text field, so it is the only time the island
+    // is allowed keyboard focus.
     if (this.lastSyncedView !== State.view) {
       const wasChat = this.lastSyncedView === "prompt";
       this.lastSyncedView = State.view;

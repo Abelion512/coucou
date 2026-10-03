@@ -25,11 +25,10 @@ pub struct Settings {
     /// requires the API key.
     #[serde(default)]
     pub api_base: String,
-    /// Model ids typed by hand, newest first.
-    ///
-    /// A relay like 9router lists a thousand-plus models, which is useless in a
-    /// dropdown and slow to render. So the list stays what the user actually uses
-    /// and the relay is only asked whether those still exist.
+    /// Model ids typed by hand, newest first. A relay like 9router lists a
+    /// thousand-plus models, useless in a dropdown and slow to render, so the list
+    /// stays what the user actually uses and the relay is only asked whether those
+    /// still exist.
     #[serde(default)]
     pub recent_models: Vec<String>,
 }
@@ -106,9 +105,9 @@ pub fn load() -> Settings {
     match std::fs::read(settings_path()) {
         Ok(bytes) => {
             let mut s: Settings = serde_json::from_slice(&bytes).unwrap_or_default();
-            // Volume was capped at 0.2 while the slider now goes to 1.0, so a
-            // stored value from an older build is still valid — but anything out
-            // of range would be accepted by Web Audio as a gain above 1 and clip.
+            // Volume was capped at 0.2 while the slider now goes to 1.0, so an
+            // older stored value is still valid — but out of range it would be
+            // accepted by Web Audio as a gain above 1 and clip.
             s.sound_volume = s.sound_volume.clamp(0.0, 1.0);
             s
         }

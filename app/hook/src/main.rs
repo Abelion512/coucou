@@ -3,15 +3,15 @@
 //! Reads the hook JSON on stdin, adds a little terminal context, and hands it to
 //! Coucou over the per-user Unix socket `$XDG_RUNTIME_DIR/coucou/coucou.sock`.
 //!
-//! Hard rule (docs/CLAUDE.md): **never block Claude Code.**
+//! Hard rule (AGENTS.md): **never block Claude Code.**
 //! * If the socket does not exist — Coucou is closed — we exit 0 immediately with
 //!   nothing on stdout, and the session carries on untouched.
 //! * Every step runs under a deadline enforced by the main thread, so a server that
 //!   accepts the connection and then stops reading cannot wedge the session
 //!   either: we abandon the worker and exit.
-//! * Only `PermissionRequest` waits for an answer, because approving from the
-//!   island is the whole point. No answer means empty stdout, and Claude Code
-//!   asks in the terminal exactly as if Coucou were not installed.
+//! * Only `PermissionRequest` waits for an answer, because approving from the island
+//!   is the whole point. No answer means empty stdout, and Claude Code asks in the
+//!   terminal exactly as if Coucou were not installed.
 //!
 //! Usage: `coucou-hook [--agent <name>] <EventName>` (the name is also read from
 //! the JSON). `--agent` routes the event to a dynamic agent pill instead of the

@@ -5,15 +5,13 @@
 // read one line back, the server closes. The newline is the frame delimiter:
 // without it the gateway waits for a complete line and answers nothing at all
 // (silently, after ~2 s), so a client that forgets it looks exactly like a dead
-// gateway. `identify` and `status` are the verified verbs; `status`
-// carries `gateway_state`, `active_agents`, `code_version` and
-// `platforms.<name>.state`.
+// gateway. `identify` and `status` are the verified verbs; `status` carries
+// `gateway_state`, `active_agents`, `code_version` and `platforms.<name>.state`.
 //
 // Spec rules: poll every 5 s with a 2 s timeout; a missing socket means
-// `unavailable`; `active_agents = 0` while running means Idle (never Working);
-// an api_server platform that is not `connected` surfaces as Error. Hermes has
-// its own approval flow (`tools/approval.py`) — Coucou only watches, it never
-// sends decisions, so this adapter has no write path at all.
+// `unavailable`; `active_agents = 0` while running means Idle, never Working; an
+// api_server platform that is not `connected` surfaces as Error. Hermes has its
+// own approval flow (`tools/approval.py`) — Coucou only watches it.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -38,9 +36,8 @@ const SESSION_POLL: Duration = Duration::from_secs(30);
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// The API server address the gateway reports, kept because it is the only place
-/// it is ever known. The status payload carries `platforms.api_server.listener_base`
-/// every 5 s and it used to be dropped on the floor, leaving "where is Hermes"
-/// answerable only from a comment in a spec.
+/// it is ever known: the status payload carries it every 5 s and it used to be
+/// dropped on the floor.
 static API_BASE: Mutex<Option<String>> = Mutex::new(None);
 
 /// Where Hermes serves HTTP, if the gateway said so.
@@ -62,15 +59,12 @@ fn last_notice() -> Option<String> { LAST_NOTICE.lock().ok().map(|v| v.clone()) 
 
 /// The most recent real conversation Hermes has, as `(id, label)`.
 ///
-/// The gateway's control socket has no sessions verb — it answers `identify` and
-/// `status`, and its status carries a liveness flag but no session identity. The
-/// sessions live in `~/.hermes/state.db`, so this shells out to the `sqlite3`
-/// client read-only rather than linking SQLite into the app: one short-lived
-/// process every 30 s costs nothing next to a C dependency in a binary that has to
-/// load fast, because the hook relay spawns it on every Claude Code event.
-///
-/// Returns `None` whenever it cannot answer honestly — no `sqlite3`, no database,
-/// no table. A missing label must never be a wrong one.
+/// The control socket has no sessions verb — it answers `identify` and `status`,
+/// and `status` carries a liveness flag but no session identity. The sessions live
+/// in `~/.hermes/state.db`, so this shells out to the `sqlite3` client read-only
+/// rather than linking SQLite into a binary the hook relay spawns on every Claude
+/// Code event. Returns `None` whenever it cannot answer honestly: a missing label
+/// must never be a wrong one.
 fn latest_session() -> Option<(String, String)> {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     let db = home.join(".hermes").join("state.db");

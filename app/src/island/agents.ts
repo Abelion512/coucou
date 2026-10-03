@@ -1,10 +1,9 @@
-// AgentBus → State. The Rust side already funnels OpenCode, Hermes and
-// Freebuff through one `agent` event (see src-tauri/src/agents/mod.rs); this is
-// the other end of that wire. Without it the adapters run, log, and are thrown
-// away — which is exactly how three live adapters ended up invisible.
+// AgentBus → State: the other end of the one `agent` event the Rust adapters emit
+// (src-tauri/src/agents/mod.rs). Without it three live adapters run, log, and are
+// thrown away.
 //
-// Per docs/SPEC-agent-pills.md: observe-only, one pill per agent (not per
-// session), no front-end polling, no sound, and no PermissionReq path.
+// Per docs/SPEC-agent-pills.md: observe-only, one pill per agent, no front-end
+// polling, no sound, no PermissionReq path.
 
 import { Bridge, onEvent } from "../core/bridge";
 import { AGENTS_META } from "../core/agents-meta";
@@ -92,10 +91,8 @@ export function registerAgentHandlers() {
       case "sessionStart": {
         const task = ensurePill(agent);
         if (!task) return;
-        // The pill keeps the agent's name. What the adapter reports as the
-        // project is a session slug — "hermes-aux", a model id — and putting it
-        // on the pill left the island reading "hermes-aux" where it should read
-        // "Hermes". It is not lost: it is the first thing the ticker shows.
+        // The pill keeps the agent's name: what the adapter reports as the project
+        // is a session slug ("hermes-aux"), and it rides the ticker instead.
         if (event.cwd) task.sessionCwd = event.cwd;
         const label = event.project?.trim();
         if (label) task.steps = [label.slice(0, 60)];
@@ -150,8 +147,8 @@ export function registerAgentHandlers() {
         break;
       }
 
-      // Observe-only. The three adapters have no write path, so a decision can
-      // never reach them; PermissionReq is Claude-Code-only by guardrail.
+      // Observe-only: the adapters have no write path, and PermissionReq is
+      // Claude-Code-only by guardrail.
       case "permissionReq":
         break;
 
@@ -159,11 +156,10 @@ export function registerAgentHandlers() {
         break;
     }
   })
-    // Everything above this line was a race. The window exists before the
-    // webview has subscribed, and an adapter that answers in that gap — an
-    // OpenCode server that was already running connects in about a second — is
-    // heard by nobody and never repeats itself. Asking for a snapshot of what is
-    // already known turns "running but invisible" into a pill.
+    // Everything above this line was a race: the window exists before the webview
+    // subscribes, and an adapter answering in that gap — an OpenCode server that
+    // was already running connects in about a second — is heard by nobody and
+    // never repeats itself.
     //
     // It has to wait for the `listen` promise above: Tauri drops an event whose
     // listener is not registered yet, so syncing in parallel with subscribing

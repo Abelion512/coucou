@@ -65,8 +65,8 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   // misleading here.
   const missing = isClaude ? "Hooks not installed" : "Key not configured";
   // Claude Code has no poller: "Connected · loading…" described a request that was
-  // never made, so the card sat on that wording forever. What it actually knows is
-  // whether hooks are installed and whether a session is running.
+  // never made, so the card sat on that wording forever. What it knows is whether
+  // hooks are installed and whether a session is running.
   const label = error
     ?? (isClaude
       ? (configured ? "Hooks installed" : missing)
@@ -76,8 +76,8 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   const actions = h("div", { class: "int-actions" });
   if (isClaude) {
     // A session that has never reported has no cwd, and handing `null` to a
-    // launcher opened whatever the desktop felt like — which reads as a button
-    // that does nothing. Say what it will open instead of pretending.
+    // launcher opened whatever the desktop felt like — which reads as a dead
+    // button. Say what it will open instead.
     const cwd = task.sessionCwd;
     actions.append(
       h("button", {

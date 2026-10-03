@@ -121,15 +121,12 @@ pub async fn send(
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    // Where may the key go?
-    //
-    // The official API obviously. A relay on loopback too — that is a proxy on
-    // this same machine (9router and friends), and 9router rejects a Messages
-    // request without one. A relay anywhere else: no. `api_base` is a plain
+    // Where may the key go? The official API, and a relay on loopback — that is a
+    // proxy on this same machine (9router and friends), and 9router rejects a
+    // Messages request without one. Anywhere else: no. `api_base` is a plain
     // string in a 0644 JSON file, so any same-uid process can rewrite it and read
     // the user's Anthropic key out of the next chat message — a persistence trick
-    // that works even where the keyring collection itself is locked. A remote
-    // relay should ask for its own credentials.
+    // that works even where the keyring collection itself is locked.
     let custom = api_base.map(str::trim).filter(|b| !b.is_empty());
     let key = match custom {
         Some(base) if !is_loopback(base) => None,
@@ -218,14 +215,11 @@ pub async fn send(
     Ok(ChatReply { text })
 }
 
-/// What a 200 that is not a Messages response actually was.
-///
-/// "Unexpected API response." was technically true and useless: a relay that
-/// answers in OpenAI's shape, a proxy that wraps an error in a 200, and a
-/// gateway that returns HTML all land on that same sentence, and the one thing
-/// the user can act on — looking at what came back — is exactly what the
-/// message refuses to show. Nothing secret is in here: it is the response body,
-/// truncated.
+/// What a 200 that is not a Messages response actually was. "Unexpected API
+/// response." was technically true and useless: an OpenAI-shaped relay, a proxy
+/// that wraps an error in a 200 and a gateway returning HTML all land on that one
+/// sentence, and what the user can act on — what came back — is exactly what it
+/// refuses to show. Nothing secret is in here: the body, truncated.
 fn describe(response: &Value) -> String {
     if let Some(message) = response
         .get("error")

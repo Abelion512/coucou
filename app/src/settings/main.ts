@@ -1,6 +1,4 @@
 // Settings window — the place where anything that writes to disk is confirmed.
-// Stage 2 covers the Claude Code hooks and the general preferences; API keys and
-// integrations land here too in a later stage.
 
 import "./settings.css";
 import { Bridge, onEvent, type AgentStatus, type HookStatus } from "../core/bridge";
@@ -253,14 +251,11 @@ function apiSection(hasKey: boolean): HTMLElement {
     }
   });
 
-  // Known models in a dropdown, plus "Custom…" for whatever a relay exposes.
-  //
-  // A relay can offer a thousand-plus models (9router lists 1013). Rendering
-  // that is useless to read and slow to open, so the dropdown is only the
-  // defaults plus the ids this machine has actually used, and the relay is asked
-  // periodically which of *those* still exist. Nothing is ever silently removed:
-  // a model the relay dropped is marked, because a typo in a config is more
-  // likely than a deliberate deletion.
+  // Known models in a dropdown, plus "Custom…" for whatever a relay exposes. A
+  // relay can list a thousand-plus ids (9router: 1013), so the dropdown is only
+  // the defaults plus what this machine has used, and the relay is asked which of
+  // *those* still exist. A dropped model is marked, never removed: a typo in a
+  // config is more likely than a deliberate deletion.
   const CUSTOM = "__custom__";
   const model = h("select", {}) as HTMLSelectElement;
   const missing = new Set<string>();
@@ -283,7 +278,7 @@ function apiSection(hasKey: boolean): HTMLElement {
       model.append(h("option", {
         value: id,
         // "not on the relay" rather than a strike-through: a select option cannot
-        // be styled reliably, and the label has to mean something when read aloud.
+        // be styled reliably.
         text: gone ? `${id}  (not on the relay)` : id,
       }));
     }
@@ -333,9 +328,9 @@ function apiSection(hasKey: boolean): HTMLElement {
     syncCustom();
   });
 
-  // Ask the relay which of our ids are still there. Armed by the open event and
-  // then slow: the settings window is created hidden and never destroyed, so a
-  // timer running from launch would outlive every window the user ever opens.
+  // Ask the relay which of our ids are still there. Armed by the open event: this
+  // window is created hidden and never destroyed, so a timer running from launch
+  // would outlive every visible second of the app.
   let armed = false;
   const catalogue = h("div", { class: "hint" });
   const checkModels = async () => {
@@ -359,10 +354,6 @@ function apiSection(hasKey: boolean): HTMLElement {
       ? `Relay lists ${res.total} models. Not on it: ${res.missing.join(", ")}.`
       : `Relay lists ${res.total} models — all ${known.length} of yours are on it.`;
   };
-  // The window is hidden most of the time; a timer that outlives every visible
-  // second of the app is the kind of thing the 0 %-when-hidden rule is about, so
-  // it is armed only once the window has been opened, and it never fires while
-  // `armed` is false.
   window.setInterval(() => {
     if (armed) void checkModels();
   }, 5 * 60_000);
@@ -502,22 +493,18 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
 const AGENT_META = AGENTS_META;
 
 /**
- * The three watched agents.
- *
- * The island shows a pill only while an agent is running, so "no pill" is correct
- * behaviour and also the only symptom when something is broken. This is the one
- * surface that tells the two apart. Nothing here polls: the window is created at
- * startup and never destroyed, so a timer would run forever behind a closed window —
- * it reads once and then follows the `agent` event, deduplicated exactly like the
- * island does.
+ * The three watched agents. The island shows a pill only while an agent is
+ * running, so "no pill" is correct behaviour and also the only symptom when
+ * something is broken — this is the surface that tells the two apart. Nothing here
+ * polls: the window is created at startup and never destroyed, so it reads once
+ * and then follows the `agent` event, deduplicated exactly like the island does.
  */
 function agentsSection(initial: AgentStatus[] | null): HTMLElement {
   const rows = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
   const note = h("div", { class: "hint" });
 
   // Adapters re-send the same state every few seconds; redraw only on a change.
-  // The sentinel must not be a possible key: an empty list produces "", and a ""
-  // initial value made the first paint a no-op.
+  // The sentinel must not be a possible key: an empty list produces "".
   let lastKey: string | null = null;
   const paint = (list: AgentStatus[] | null) => {
     const key = (list ?? []).map((a) => `${a.agent}:${a.connected}:${a.endpoint ?? ""}`).join("|");
@@ -527,8 +514,7 @@ function agentsSection(initial: AgentStatus[] | null): HTMLElement {
     note.textContent = "";
 
     // No list means the command did not answer — `bun run dev` in a plain browser,
-    // or a build without the command. An empty section would read as "nothing is
-    // configured", which is a different and wrong thing to say.
+    // or a build without it. An empty section would read as "nothing configured".
     if (!list) {
       rows.append(
         h("div", {
@@ -565,11 +551,9 @@ function agentsSection(initial: AgentStatus[] | null): HTMLElement {
 
   paint(initial);
 
-  // Refresh on open, not on every agent event. The `agent` event is broadcast to
-  // both webviews, and this window is created hidden at startup and never
-  // destroyed — so subscribing to it meant waking the WebKit process and making
-  // an IPC round trip about a status nobody was looking at, once per adapter
-  // event, forever.
+  // Refresh on open, not on every agent event: the `agent` event is broadcast to
+  // both webviews, and this window is created hidden and never destroyed, so
+  // subscribing meant waking WebKit for a status nobody was looking at.
   void onEvent("settings-opened", () => {
     void Bridge.agentsStatus().then((s) => s && paint(s));
   });

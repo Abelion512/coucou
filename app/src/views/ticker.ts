@@ -1,11 +1,9 @@
-// Overview task ticker — port of TickerView (V2) from IslandViewContent.swift.
-//
-// Three rows: completed (A), current → completed (B), incoming (C). Every row
-// position is recomputed from a single clock in `tick()`, driven by the island's
-// frame loop — no CSS transitions and no timers. Chaining CSS transitions with a
-// reset timer let two rows land on the same line when steps arrived in bursts,
-// and any step that arrived mid-animation was dropped outright. Steps are now
-// queued instead, so a burst scrolls past rather than vanishing.
+// Overview task ticker — port of TickerView (V2). Three rows: completed (A),
+// current → completed (B), incoming (C). Every position is recomputed from one
+// clock in `tick()`, driven by the island's frame loop — no CSS transitions, no
+// timers. Chaining CSS transitions with a reset timer let two rows land on the
+// same line in a burst and dropped any step that arrived mid-animation, so steps
+// are queued instead.
 
 import { h, svg } from "./dom";
 import { ICONS } from "./icons";
@@ -146,7 +144,7 @@ export class Ticker {
     if (p < 1) return;
 
     // Commit: the current row becomes the completed one, the incoming row the
-    // current one. Texts move, elements stay put — no reordering, no overlap.
+    // current one. Texts move, elements stay put — no reorder, no overlap.
     setText(this.a, this.b.text);
     setText(this.b, this.c.text);
     this.queue.shift();
