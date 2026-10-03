@@ -110,7 +110,31 @@ const APPROVAL_FIELDS = [
   "prompt", // Task
 ] as const;
 
+/**
+ * The text of an AskUserQuestion, or null when this is not one.
+ *
+ * It arrives as a PermissionRequest because that is the only hook event Claude
+ * Code offers, but there is nothing to approve: the answer is a multiple choice
+ * the hook protocol cannot carry, and allowing the request only lets the
+ * terminal ask. The card therefore has to show the question itself — a card
+ * reading "AskUserQuestion" with Allow and Deny is the least informative thing
+ * this view can possibly show.
+ *
+ * Both shapes are accepted because only one of them is documented.
+ */
+function questionText(tool: string, input: Record<string, unknown>): string | null {
+  if (tool !== "AskUserQuestion") return null;
+  const questions = input.questions;
+  if (Array.isArray(questions) && questions.length > 0) {
+    const first = questions[0] as Record<string, unknown>;
+    if (typeof first?.question === "string" && first.question.trim()) return first.question.trim();
+  }
+  return typeof input.question === "string" && input.question.trim() ? input.question.trim() : null;
+}
+
 function approvalTarget(tool: string, input: Record<string, unknown>): string {
+  const question = questionText(tool, input);
+  if (question) return question;
   for (const field of APPROVAL_FIELDS) {
     const value = input[field];
     if (typeof value === "string" && value.trim()) {

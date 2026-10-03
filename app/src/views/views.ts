@@ -327,21 +327,35 @@ function buildApproval(actions: ViewActions): ViewHost {
   return {
     el,
     sync() {
+      const approval = State.pendingApproval;
+      // AskUserQuestion rides in on PermissionRequest, but the hook protocol has no
+      // way to carry a multiple-choice answer — approving it just lets the terminal
+      // ask. Calling that "Allow" on a card that cannot approve anything is a lie
+      // the user pays for, so the button says where the answer actually goes.
+      const isQuestion = approval?.tool === "AskUserQuestion";
       clear(who);
-      who.append(agentWho(State.focusTask, "needs permission"));
+      who.append(agentWho(State.focusTask, isQuestion ? "is asking a question" : "needs permission"));
       // The whole point of approving here rather than in the terminal: this line
-      // is the command, the file path or the URL being authorised, not just the
-      // name of the tool asking.
-      code.textContent = State.pendingApproval?.command || State.pendingApproval?.tool || "…";
-      // Two buttons, built once. Rebuilding them between a mouse-down and a
-      // mouse-up would swallow the click, and there is nothing left to vary:
-      // "Always" is gone until the remembered-rules list exists to back it.
-      if (rowKey === "built") return;
-      rowKey = "built";
+      // is the command, the file path or the URL being authorised — or, for a
+      // question, the question itself.
+      code.textContent = approval?.command || approval?.tool || "…";
+      // Two buttons, built once per mode. Rebuilding them between a mouse-down and
+      // a mouse-up would swallow the click, and there is nothing left to vary
+      // within a mode: "Always" is gone until the remembered-rules list exists to
+      // back it. The mode itself does change between cards, so it is part of the
+      // key rather than a separate rebuild on every sync.
+      const key = isQuestion ? "question" : "permission";
+      if (rowKey === key) return;
+      rowKey = key;
       clear(row);
+      // The guidance rides in the button row rather than a row of its own: the
+      // card is 160 px tall (layout.ts), and a fourth child squeezed the
+      // question text — the one line on this card that must be readable — into a
+      // clipped half-height.
+      if (isQuestion) row.append(h("div", { class: "sub", text: "Answer in your terminal." }));
       row.append(
         btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-        btn("Allow", "primary", () => actions.decide("allow"), "Y"),
+        btn(isQuestion ? "Reply in terminal" : "Allow", "primary", () => actions.decide("allow"), "Y"),
       );
     },
   };

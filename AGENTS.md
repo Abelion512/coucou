@@ -50,6 +50,12 @@ and measures what happened, which is the only way to catch click-through,
 clipped panels and invisible headers — all of them window-manager behaviour that
 no DOM assertion can see.
 
+`cargo build -p coucou` is **not** a runnable app: `tauri-build` emits
+`rustc-cfg=dev` for any non-release build, so the webview loads
+`http://localhost:1420` and shows an empty island unless vite happens to be
+running. Build release (`bunx tauri build --no-bundle` if you do not need the
+deb and AppImage) when you intend to look at the thing.
+
 **Per-language gates.** Rust: `cargo clippy` (clean) and `cargo test`. TypeScript:
 `tsc --noEmit` under `strict` + `noUnusedLocals` (via `bun run build`). `cargo fmt` is
 **not** enforced: the tree is written in a deliberately compact style (one-line
