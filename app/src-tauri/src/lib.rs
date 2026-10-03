@@ -234,6 +234,14 @@ fn approval_decline(app: AppHandle, request_id: String) {
     relay::decline(&app, &request_id);
 }
 
+/// The answers to an `AskUserQuestion`, as a JSON object keyed by the question
+/// text. Only the `--ask` PreToolUse hook can receive one; anything else has no
+/// pending request and is dropped with a line in the log.
+#[tauri::command]
+fn question_answer(app: AppHandle, request_id: String, answers: String) {
+    relay::answer_question(&app, &request_id, &answers);
+}
+
 // ── Chat, files and secrets ───────────────────────────────────────────────────
 
 /// One chat turn. The API key and any file bytes stay on the Rust side.
@@ -555,6 +563,7 @@ pub fn run() {
             approval_decision,
             approval_ack,
             approval_decline,
+            question_answer,
             log_line,
             chat_send,
             chat_reset,

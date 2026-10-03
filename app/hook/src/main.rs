@@ -46,14 +46,57 @@ fn relay_path() -> String {
     unix::socket_path()
 }
 
-/// The documented PermissionRequest output lives in `decision.rs`.
-use decision::decision_json;
+/// The documented hook output lives in `decision.rs`.
+use decision::{ask_answer_json, decision_json};
+
+/// "coucou-hook [--agent <name>] [--ask] [<EventName>]"
+struct Args {
+    event: String,
+    agent: String,
+    /// Installed as a second `PreToolUse` entry with `matcher: AskUserQuestion`.
+    /// Without the flag this invocation is the general PreToolUse, which never
+    /// waits: only the dedicated hook may hold the session open for an answer.
+    ask: bool,
+}
+
+fn parse_args() -> Args {
+    parse_args_from(std::env::args().skip(1))
+}
+
+fn parse_args_from<I: Iterator<Item = String>>(mut it: I) -> Args {
+    let mut args = Args { event: String::new(), agent: String::new(), ask: false };
+    while let Some(arg) = it.next() {
+        if arg == "--agent" {
+            args.agent = it.next().unwrap_or_default();
+        } else if arg == "--ask" {
+            args.ask = true;
+        } else if args.event.is_empty() {
+            args.event = arg;
+        }
+    }
+    args
+}
+
+/// What the relay was asked, once stdin has been read.
+struct Event {
+    /// The line to forward to the app.
+    line: String,
+    name: String,
+    /// `tool_input.questions` when this is a `--ask` PreToolUse for
+    /// AskUserQuestion: the array Claude Code wants echoed back in
+    /// `updatedInput`. `None` for every other event.
+    questions: Option<serde_json::Value>,
+}
 
 fn main() {
-    let Some((payload, event)) = read_event() else { std::process::exit(0) };
+    let args = parse_args();
+    let Some(event) = read_event(&args) else { std::process::exit(0) };
 
-    let waits_for_answer = event == "PermissionRequest";
+    let asks = event.questions.is_some();
+    let waits_for_answer = event.name == "PermissionRequest" || asks;
     let budget = if waits_for_answer { DECISION_BUDGET } else { FIRE_AND_FORGET_BUDGET };
+    let questions = event.questions.clone();
+    let payload = event.line;
 
     // The worker owns every blocking call. If it overruns the budget we simply
     // stop listening and exit: the process dying closes the socket with it.
@@ -65,7 +108,11 @@ fn main() {
     });
 
     if let Ok(Some(decision)) = rx.recv_timeout(budget) {
-        if let Some(json) = decision_json(&decision) {
+        let printed = match &questions {
+            Some(q) => ask_answer_json(&decision, q),
+            None => decision_json(&decision),
+        };
+        if let Some(json) = printed {
             let mut out = std::io::stdout();
             let _ = writeln!(out, "{json}");
             let _ = out.flush();
@@ -100,7 +147,7 @@ fn connect() -> Option<std::os::unix::net::UnixStream> {
 }
 
 /// Reads stdin and returns the payload to forward plus the event name.
-fn read_event() -> Option<(String, String)> {
+fn read_event(args: &Args) -> Option<Event> {
     let mut raw = Vec::new();
     if std::io::stdin().read_to_end(&mut raw).is_err() || raw.is_empty() {
         return None;
@@ -113,33 +160,30 @@ fn read_event() -> Option<(String, String)> {
     let mut payload = serde_json::from_slice::<serde_json::Value>(&raw).ok()?;
     let map = payload.as_object_mut()?;
 
-    // Parse argv: "coucou-hook [--agent <name>] [<EventName>]"
-    // --agent tags the payload with coucou_agent so the app routes to the right pill.
-    // Absent or invalid names are validated and discarded by the app, not here.
-    let mut agent = String::new();
-    let mut arg_event = String::new();
-    {
-        let mut it = std::env::args().skip(1);
-        while let Some(arg) = it.next() {
-            if arg == "--agent" {
-                agent = it.next().unwrap_or_default();
-            } else if arg_event.is_empty() {
-                arg_event = arg;
-            }
-        }
+    // --agent tags the payload with coucou_agent so the app routes to the right
+    // pill. Absent or invalid names are validated and discarded by the app, not
+    // here. Absent means Claude Code, so existing hook commands keep working.
+    if !args.agent.is_empty() {
+        map.insert("coucou_agent".into(), serde_json::Value::String(args.agent.clone()));
     }
-    // Which agent this hook was installed for. Absent means Claude Code,
-    // so existing hook commands keep working unchanged.
-    if !agent.is_empty() {
-        map.insert("coucou_agent".into(), serde_json::Value::String(agent));
-    }
-    let event = map
+    let name = map
         .get("hook_event_name")
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .filter(|s| !s.is_empty())
-        .unwrap_or(arg_event);
-    map.insert("hook_event_name".into(), serde_json::Value::String(event.clone()));
+        .unwrap_or_else(|| args.event.clone());
+    map.insert("hook_event_name".into(), serde_json::Value::String(name.clone()));
+
+    // Only the dedicated `--ask` hook may hold the session open, and only for a
+    // real AskUserQuestion: a general PreToolUse on some other tool is the old
+    // fire-and-forget path and must never become a 110 s wait.
+    let is_question = args.ask
+        && name == "PreToolUse"
+        && map.get("tool_name").and_then(|v| v.as_str()) == Some("AskUserQuestion");
+    let questions = is_question
+        .then(|| map.get("tool_input").and_then(|i| i.get("questions")).cloned())
+        .flatten()
+        .filter(|q| q.is_array() && !q.as_array().unwrap().is_empty());
 
     for field in DROPPED_FIELDS {
         map.remove(*field);
@@ -178,7 +222,7 @@ fn read_event() -> Option<(String, String)> {
 
     let mut line = payload.to_string();
     line.push('\n');
-    Some((line, event))
+    Some(Event { line, name, questions })
 }
 
 /// Caps every string in the payload. A single Write can carry a whole file.
@@ -235,6 +279,26 @@ fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ask_hook_is_installed_with_its_own_flag() {
+        let args = parse_args_from(["--ask".into(), "PreToolUse".into()].into_iter());
+        assert!(args.ask);
+        assert_eq!(args.event, "PreToolUse");
+        assert!(args.agent.is_empty());
+
+        // The general PreToolUse entry and every older command must keep working
+        // exactly as before.
+        let old = parse_args_from(["PreToolUse".into()].into_iter());
+        assert!(!old.ask);
+        assert_eq!(old.event, "PreToolUse");
+
+        let tagged = parse_args_from(
+            ["--agent".into(), "opencode".into(), "--ask".into(), "PreToolUse".into()].into_iter(),
+        );
+        assert_eq!(tagged.agent, "opencode");
+        assert!(tagged.ask);
+    }
 
     #[test]
     fn long_strings_are_cut_on_a_char_boundary() {

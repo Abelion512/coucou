@@ -21,6 +21,14 @@ export interface ViewActions {
   openTarget(): void;
   openUrl(url: string): void;
   decide(d: "allow" | "deny" | "always"): void;
+  /** Single-select: one click answers. Multi-select: a toggle. */
+  pickQuestion(label: string): void;
+  /** The free-text "Other…" field. */
+  setQuestionText(text: string): void;
+  /** Send / Next. */
+  submitQuestion(): void;
+  /** "Reply in terminal" — release it and let Claude Code ask again. */
+  replyInTerminal(): void;
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
@@ -372,22 +380,98 @@ function buildApproval(actions: ViewActions): ViewHost {
   };
 }
 
-// ── Question ──────────────────────────────────────────────────────────────────
+// ── Question ────────────────────────────────────────────────────────────────
 
-function buildQuestion(): ViewHost {
+/**
+ * Claude Code's `AskUserQuestion`, answered from the island (#165).
+ *
+ * One question at a time with a 1/N counter, its options as buttons, and a free
+ * "Other…" field for anything not on the list. Single-select sends on the click;
+ * multi-select and multi-question need Send/Next, so a half-answered question
+ * is never sent by accident.
+ */
+function buildQuestion(actions: ViewActions): ViewHost {
   const who = h("div");
+  const head = h("div", { class: "q-head" });
   const title = h("div", { class: "title" });
+  const options = h("div", { class: "q-options" });
+  const other = h("input", {
+    class: "q-other",
+    type: "text",
+    placeholder: "Other…",
+    maxlength: "300",
+    oninput: (e) => actions.setQuestionText((e.target as HTMLInputElement).value),
+    onkeydown: (e) => {
+      const k = e as KeyboardEvent;
+      if (k.key !== "Enter") return;
+      k.preventDefault();
+      actions.submitQuestion();
+    },
+  });
   const row = h("div", { class: "actions" });
-  const el = h("div", { class: "view" }, card("cyan", stack(116, 16, who, title, row)));
+  const el = h(
+    "div",
+    { class: "view" },
+    card("cyan", stack(116, 16, who, head, title, options, other, row)),
+  );
+
   return {
     el,
     sync() {
+      const q = State.pendingQuestion;
+      const question = State.currentQuestion;
       clear(who);
-      who.append(agentWho(State.focusTask, "Claude Code is asking a question"));
-      const task = State.focusTask;
-      title.textContent = task?.steps.at(-1) ?? "Claude needs an answer.";
+      who.append(agentWho(State.focusTask, "Claude Code is asking"));
+
+      clear(head);
+      clear(options);
       clear(row);
-      row.append(h("div", { class: "sub", text: "Answer in your terminal — Coucou can't reply for you yet." }));
+      if (!q || !question) {
+        // The old PermissionRequest shape, or a question that timed out: show
+        // the text and point at the terminal, which is where it gets answered.
+        title.textContent = State.focusTask?.steps.at(-1) ?? "Claude needs an answer.";
+        row.append(h("div", { class: "sub", text: "Answer in your terminal." }));
+        other.style.display = "none";
+        options.style.display = "none";
+        return;
+      }
+
+      other.style.display = "";
+      options.style.display = "";
+
+      const counter = h("span", { class: "q-count", text: `${q.index + 1}/${q.questions.length}` });
+      head.append(
+        ...(question.header ? [h("span", { class: "q-tag", text: question.header })] : []),
+        counter,
+      );
+      title.textContent = question.question;
+
+      const raw = q.answers[question.question];
+      const picked = new Set<string>(typeof raw === "string" ? [raw] : raw ?? []);
+      for (const option of question.options) {
+        const on = picked.has(option.label);
+        const b = h(
+          "button",
+          { class: `q-option${on ? " on" : ""}`, onclick: () => actions.pickQuestion(option.label) },
+          h("span", { class: "q-label", text: option.label }),
+          option.description ? h("span", { class: "q-desc", text: option.description }) : null,
+        );
+        options.append(b);
+      }
+      if (other.value !== q.freeText) other.value = q.freeText;
+
+      const needsSend = question.multiSelect || q.questions.length > 1;
+      if (needsSend) {
+        row.append(btn(q.index < q.questions.length - 1 ? "Next" : "Send", "primary", () => actions.submitQuestion()));
+      }
+      row.append(btn("Reply in terminal", "secondary", () => actions.replyInTerminal()));
+    },
+    focus() {
+      const q = State.pendingQuestion;
+      // Typing first is the fastest path when none of the options fit, so the
+      // field takes the keyboard on the last question and stays out of the way
+      // on the first.
+      if (q?.questions.length === 1) other.focus();
     },
   };
 }
@@ -549,7 +633,7 @@ export function buildViews(
   map.set("overview", buildOverview(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
-  map.set("question", buildQuestion());
+  map.set("question", buildQuestion(actions));
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());

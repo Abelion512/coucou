@@ -7,6 +7,15 @@ from this repository.
 
 ## Unreleased
 
+- **Answer Claude's questions from the island.** When Claude Code asks a
+  multiple-choice question, pick an option or type your own answer right in the
+  notch — single or multi-select, up to four questions, with a 1/N counter and
+  an "Other…" field for anything not on the list. "Reply in terminal" hands it
+  back to the CLI. This needs the updated hooks: Settings → Claude Code Hooks
+  re-installs them (a second `PreToolUse` entry with an `AskUserQuestion`
+  matcher, a 130 s timeout, and a relay that carries the answer back as
+  `updatedInput`). Claude Code 2.1.85+ sends the question on `PreToolUse`;
+  older versions still ask in the terminal
 - **The Mochi on the left wears the agent's colour.** Focusing an OpenCode,
   Hermes or Freebuff pill used to leave it the default white body, because the
   island only tinted itself for integration pills — the three adapters this fork

@@ -48,6 +48,9 @@ pub enum Reply {
     Ack,
     /// A human clicked: `allow` or `deny`.
     Decision(String),
+    /// The answers to an `AskUserQuestion`, already shaped as the JSON object
+    /// Claude Code wants. Only the `--ask` PreToolUse hook can receive this.
+    Answer(String),
     /// Nobody can act on it — paused, or another request already holds the card.
     Decline,
 }
@@ -186,7 +189,12 @@ async fn handle(app: AppHandle, stream: UnixStream) {
     // third-party `coucou_agent` is observe-only, so it is forwarded like any
     // other event and never opens a pending decision — the relay writes nothing
     // back and the agent re-asks in its own terminal.
-    if event != "PermissionRequest" || is_external(&payload) {
+    //
+    // An AskUserQuestion arrives as a PreToolUse on Claude Code 2.1.85+ and is
+    // the one non-permission event that legitimately holds the session open:
+    // the dedicated `--ask` hook is the only client that waits for a reply.
+    let question = !is_external(&payload) && is_ask_question(&payload);
+    if (event != "PermissionRequest" && !question) || is_external(&payload) {
         if is_external(&payload) {
             log::line(format!("hook {event} (external agent, no approval)"));
         } else {
@@ -203,7 +211,7 @@ async fn handle(app: AppHandle, stream: UnixStream) {
         pending.0.lock().unwrap().insert(id.clone(), tx);
     }
     payload["request_id"] = json!(id);
-    log::line(format!("hook PermissionRequest id={id}"));
+    log::line(format!("hook {} id={id}", if question { "AskUserQuestion" } else { "PermissionRequest" }));
     let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
 
     let decision = wait_for_decision(&id, &mut rx).await;
@@ -216,6 +224,18 @@ async fn handle(app: AppHandle, stream: UnixStream) {
         let _ = stream.flush().await;
     }
     let _ = stream.shutdown().await;
+}
+
+/// An `AskUserQuestion` on the dedicated `--ask` hook. Anything else that happens
+/// to arrive as a PreToolUse is the ordinary fire-and-forget event.
+fn is_ask_question(payload: &Value) -> bool {
+    payload.get("hook_event_name").and_then(Value::as_str) == Some("PreToolUse")
+        && payload.get("tool_name").and_then(Value::as_str) == Some("AskUserQuestion")
+        && payload
+            .get("tool_input")
+            .and_then(|i| i.get("questions"))
+            .and_then(Value::as_array)
+            .is_some_and(|q| !q.is_empty())
 }
 
 /// A payload from a third-party agent: `coucou_agent` set to anything but the
@@ -262,6 +282,10 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
             log::line(format!("hook id={id} answered {d}"));
             return Some(d);
         }
+        Ok(Some(Reply::Answer(a))) => {
+            log::line(format!("hook id={id} answered {a}"));
+            return Some(answer_line(&a));
+        }
         Ok(Some(Reply::Decline)) => {
             log::line(format!("hook id={id} not shown — terminal takes over"));
             return None;
@@ -278,6 +302,10 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
             log::line(format!("hook id={id} answered {d}"));
             Some(d)
         }
+        Ok(Some(Reply::Answer(a))) => {
+            log::line(format!("hook id={id} answered {a}"));
+            Some(answer_line(&a))
+        }
         Ok(Some(Reply::Decline)) => {
             log::line(format!("hook id={id} released without a decision"));
             None
@@ -286,6 +314,16 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
             log::line(format!("hook id={id} timed out — terminal takes over"));
             None
         }
+    }
+}
+
+/// The answers as the `--ask` hook expects to read them back. A payload that is
+/// not a JSON object is dropped here rather than forwarded: coucou-hook prints
+/// nothing for anything it cannot parse, and Claude Code re-asks.
+fn answer_line(answers: &str) -> String {
+    match serde_json::from_str::<Value>(answers) {
+        Ok(v) if v.is_object() => format!(r#"{{"decision":"answer","answers":{v}}}"#),
+        _ => r#"{"decision":"ask"}"#.to_string(),
     }
 }
 
@@ -325,6 +363,13 @@ pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
     send(app, request_id, Reply::Decision(word.to_string()), false);
 }
 
+/// Called by the question card's options. `answers` is a JSON object keyed by the
+/// question text, exactly as Claude Code expects it back in `updatedInput`.
+pub fn answer_question(app: &AppHandle, request_id: &str, answers: &str) {
+    log::line(format!("answer id={request_id} {}", answers.chars().take(120).collect::<String>()));
+    send(app, request_id, Reply::Answer(answers.to_string()), false);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +381,56 @@ mod tests {
         assert!(!is_external(&json!({ "coucou_agent": "" })));
         assert!(!is_external(&json!({ "coucou_agent": "claude" })));
         assert!(is_external(&json!({ "coucou_agent": "my-tool" })));
+    }
+
+    #[test]
+    fn only_a_real_question_may_hold_the_session_open() {
+        let question = json!({
+            "hook_event_name": "PreToolUse",
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [{ "question": "Deploy?" }] },
+        });
+        assert!(is_ask_question(&question));
+
+        // Every PreToolUse that is not the question tool is fire-and-forget:
+        // turning one of these into a 110 s wait would freeze a normal tool call.
+        let other_tool = json!({
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": { "command": "ls" },
+        });
+        assert!(!is_ask_question(&other_tool));
+
+        // An empty or missing questions array is not a question we can answer.
+        assert!(!is_ask_question(&json!({
+            "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+        })));
+        assert!(!is_ask_question(&json!({
+            "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+            "tool_input": { "questions": [] },
+        })));
+
+        // The old PermissionRequest shape is a different path entirely.
+        assert!(!is_ask_question(&json!({
+            "hook_event_name": "PermissionRequest", "tool_name": "AskUserQuestion",
+        })));
+    }
+
+    #[test]
+    fn answers_are_forwarded_as_json_and_anything_else_becomes_ask() {
+        assert_eq!(
+            answer_line(r#"{"Deploy?":"yes"}"#),
+            r#"{"decision":"answer","answers":{"Deploy?":"yes"}}"#
+        );
+        // A multi-select answer keeps its array.
+        assert_eq!(
+            answer_line(r#"{"Pick":["a","b"]}"#),
+            r#"{"decision":"answer","answers":{"Pick":["a","b"]}}"#
+        );
+        // Anything that is not an object is dropped here, so coucou-hook prints
+        // nothing and Claude Code re-asks rather than receiving half an answer.
+        for junk in ["", "yes", "null", "[1,2]", r#"{"a""#] {
+            assert_eq!(answer_line(junk), r#"{"decision":"ask"}"#, "{junk:?}");
+        }
     }
 }

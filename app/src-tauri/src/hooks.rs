@@ -112,6 +112,25 @@ fn hook_command(event: &str) -> String {
     format!("\"{exe}\" {event}")
 }
 
+/// The dedicated AskUserQuestion hook: a second `PreToolUse` entry narrowed by
+/// `matcher`, so only that tool waits on the island. It gets a longer timeout
+/// than coucou-hook's own 110 s budget, which is what keeps Claude Code from
+/// deciding first — see DECISION_BUDGET in app/hook/src/main.rs.
+const ASK_MATCHER: &str = "AskUserQuestion";
+const ASK_TIMEOUT: u64 = 130;
+
+fn ask_hook_entry() -> Value {
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+    json!({
+        "hooks": [{
+            "type": "command",
+            "command": format!("\"{exe}\" --ask PreToolUse"),
+            "matcher": ASK_MATCHER,
+            "timeout": ASK_TIMEOUT,
+        }]
+    })
+}
+
 fn entry_is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
@@ -150,6 +169,11 @@ fn merged(existing: &Value) -> Value {
                 "timeout": timeout,
             }]
         }));
+        if *event == "PreToolUse" {
+            // Second entry under the same event, narrowed to the question tool.
+            // Claude Code runs every matching entry, and only this one waits.
+            list.push(ask_hook_entry());
+        }
         hooks.insert((*event).to_string(), Value::Array(list));
     }
 
@@ -542,6 +566,34 @@ mod tests {
         // And removing ours puts it back exactly as it was.
         let cleaned = without_ours(&after);
         assert_eq!(cleaned, existing);
+    }
+
+    #[test]
+    fn the_question_hook_is_a_second_matched_pre_tool_use_entry() {
+        let after = merged(&serde_json::json!({}));
+        let pre = after["hooks"]["PreToolUse"].as_array().unwrap();
+        let ours: Vec<String> = pre
+            .iter()
+            .filter(|e| entry_is_ours(e))
+            .map(|e| e.to_string())
+            .collect();
+        assert_eq!(ours.len(), 2, "expected the general and the ask entry");
+        assert!(
+            ours.iter().any(|s| s.contains("--ask") && s.contains(ASK_MATCHER)),
+            "no --ask entry with the AskUserQuestion matcher: {ours:?}"
+        );
+        // The ask entry must outlive the island's own 110 s budget, or Claude
+        // Code times out first and the answer never arrives.
+        let ask = pre
+            .iter()
+            .find(|e| e.to_string().contains("--ask"))
+            .expect("ask entry");
+        assert_eq!(ask["hooks"][0]["timeout"], ASK_TIMEOUT);
+        assert_eq!(ask["hooks"][0]["matcher"], ASK_MATCHER);
+
+        // Removing it again must take both entries and leave nothing behind.
+        let cleaned = without_ours(&after);
+        assert!(cleaned["hooks"].get("PreToolUse").is_none());
     }
 
     #[test]

@@ -27,6 +27,39 @@ export interface ApprovalInfo {
   command: string;
 }
 
+/** One choice on an `AskUserQuestion`, as Claude Code sends it. */
+export interface AskOption {
+  label: string;
+  description: string;
+}
+
+export interface AskQuestion {
+  /** ≤ 12 chars, the column heading upstream shows above the question. */
+  header: string;
+  question: string;
+  options: AskOption[];
+  multiSelect: boolean;
+}
+
+/** What a multi-select answer looks like; a single one is a bare string. */
+export type AskAnswer = string | string[];
+
+/**
+ * A question waiting for an answer, plus the card's own position in it.
+ *
+ * `answers` is keyed by the question *text*, because that is what Claude Code
+ * expects back in `updatedInput` — not by index and not by header.
+ */
+export interface PendingQuestion {
+  requestId: string;
+  sessionId: string;
+  questions: AskQuestion[];
+  index: number;
+  answers: Record<string, AskAnswer>;
+  /** Text typed into the free "Other…" field for the current question. */
+  freeText: string;
+}
+
 export interface ChatMessage {
   id: number;
   role: "user" | "assistant";
@@ -138,6 +171,7 @@ class AppState {
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
   pendingApproval: ApprovalInfo | null = null;
+  pendingQuestion: PendingQuestion | null = null;
 
   /**
    * "Allow for the rest of this session", per Claude Code session. Keyed on the
@@ -221,6 +255,19 @@ class AppState {
     if (!t) return;
     t.pillBadge = badge;
     this.notify();
+  }
+
+  /** The question the card is showing, or null when there is none. */
+  get currentQuestion(): AskQuestion | null {
+    return this.pendingQuestion?.questions[this.pendingQuestion.index] ?? null;
+  }
+
+  /** What the user has picked for the current question so far. */
+  get currentSelection(): AskAnswer {
+    const q = this.pendingQuestion;
+    if (!q) return "";
+    const key = q.questions[q.index]?.question;
+    return (key && q.answers[key]) ?? "";
   }
 
   /** The Claude Code pill. Everything else that is not an integration is an agent pill. */

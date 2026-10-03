@@ -14,6 +14,7 @@ import { State } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
+import { pickOption, replyInTerminal, setFreeText, submitQuestion } from "./hooks";
 import { UploadCanvas } from "../upload/canvas";
 import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
@@ -175,6 +176,10 @@ export class Island {
         State.setPillBadge("integration_claude", null);
         this.setView(State.defaultView());
       },
+      pickQuestion: (label) => pickOption(this, label),
+      setQuestionText: (text) => setFreeText(this, text),
+      submitQuestion: () => submitQuestion(this),
+      replyInTerminal: () => replyInTerminal(this),
       toggleSound: () => {
         State.settings.soundEnabled = !State.settings.soundEnabled;
         Sound.setEnabled(State.settings.soundEnabled);

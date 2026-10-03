@@ -85,6 +85,14 @@ export const Bridge = {
   approvalDecline: (requestId: string) => call<void>("approval_decline", { requestId }),
 
   /**
+   * The answers to an `AskUserQuestion`, keyed by the question text. Only the
+   * dedicated `--ask` hook is waiting for them; everything else is dropped with
+   * a line in the log rather than shown as a failure.
+   */
+  questionAnswer: (requestId: string, answers: Record<string, string | string[]>) =>
+    call<void>("question_answer", { requestId, answers: JSON.stringify(answers) }),
+
+  /**
    * "I am listening now." An adapter that found its session before the island's
    * handlers existed never repeats itself, so without this the agent is running
    * and invisible for the rest of the session.

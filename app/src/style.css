@@ -655,6 +655,86 @@ body {
   gap: 8px;
 }
 
+/* ── AskUserQuestion card ────────────────────────────────────────────── */
+
+.q-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.q-tag {
+  font: 600 10px var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim-2);
+}
+
+.q-count {
+  margin-left: auto;
+  font: 400 10px var(--font);
+  color: var(--dim-3);
+}
+
+.q-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+/* Each option is a full-width row: label plus the description Claude Code
+   sends, because a bare label often does not say what picking it does. */
+.q-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  text-align: left;
+  cursor: default;
+  transition: background 0.14s, border-color 0.14s;
+}
+
+.q-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.q-option.on {
+  border-color: rgba(34, 211, 238, 0.75);
+  background: rgba(34, 211, 238, 0.16);
+}
+
+.q-label {
+  font: 600 12px var(--font);
+}
+
+.q-desc {
+  font: 400 11px var(--font);
+  color: var(--dim-2);
+}
+
+.q-other {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--ink);
+  font: 400 12px var(--font);
+}
+
+.q-other:focus {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.75);
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;

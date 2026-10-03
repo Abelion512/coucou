@@ -4,13 +4,16 @@
 
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
-import { State } from "../core/state";
+import { State, type AskOption, type AskQuestion } from "../core/state";
 import type { Island } from "./island";
 
 const CLAUDE_ID = "integration_claude";
 
 /** Clears the approval card if no decision was made before the hook gave up. */
 let pendingTimeout: number | null = null;
+
+/** The same deadline the relay uses (108 s), minus the time to get there. */
+const QUESTION_TIMEOUT_MS = 110_000;
 
 interface HookPayload {
   hook_event_name?: string;
@@ -35,7 +38,6 @@ function validateAgent(raw: string | undefined): string | null {
 }
 
 const FALLBACK_COLORS = ["#22C55E", "#EAB308", "#60A5FA", "#E879F9"];
-
 function agentColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) {
@@ -109,13 +111,9 @@ const APPROVAL_FIELDS = [
 ] as const;
 
 /**
- * The text of an AskUserQuestion, or null when this is not one. It arrives as a
- * PermissionRequest because that is the only hook event this relay reads, and
- * there is nothing to approve: the answer is a multiple choice and this relay
- * only ever says `allow` or `deny`, so the card shows the question and points at
- * the terminal. Upstream carries the answer (#165 — a PreToolUse hook with `--ask`
- * and a 125 s wait); that is the port that would make it answerable here. Both
- * shapes are accepted because only one of them is documented.
+ * The text of an AskUserQuestion arriving the *old* way, as a PermissionRequest
+ * (Claude Code < 2.1.85). There is nothing to approve and this relay cannot
+ * answer, so the card shows the question and points at the terminal.
  */
 function questionText(tool: string, input: Record<string, unknown>): string | null {
   if (tool !== "AskUserQuestion") return null;
@@ -125,6 +123,46 @@ function questionText(tool: string, input: Record<string, unknown>): string | nu
     if (typeof first?.question === "string" && first.question.trim()) return first.question.trim();
   }
   return typeof input.question === "string" && input.question.trim() ? input.question.trim() : null;
+}
+
+/** Claude Code sends at most four questions of 2–4 options; outside that we
+ *  decline rather than show a card we cannot finish. */
+const MAX_QUESTIONS = 4;
+const MAX_OPTIONS = 4;
+
+/**
+ * `tool_input.questions` into the card's model, or null when it is not something
+ * we can answer honestly. A missing option label is dropped rather than guessed:
+ * the answer is keyed by label and goes straight back into Claude Code's own
+ * `updatedInput`, so a label we invented would be an answer nobody chose.
+ */
+export function parseAskQuestions(raw: unknown): AskQuestion[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_QUESTIONS) return null;
+  const out: AskQuestion[] = [];
+  for (const item of raw) {
+    const q = item as Record<string, unknown>;
+    const question = typeof q?.question === "string" ? q.question.trim() : "";
+    if (!question) return null;
+    const options: AskOption[] = [];
+    if (Array.isArray(q.options)) {
+      for (const opt of q.options) {
+        const o = opt as Record<string, unknown>;
+        const label = typeof o?.label === "string" ? o.label.trim() : "";
+        if (!label) continue;
+        options.push({
+          label: label.slice(0, 120),
+          description: typeof o.description === "string" ? o.description.trim().slice(0, 200) : "",
+        });
+      }
+    }
+    out.push({
+      header: typeof q.header === "string" ? q.header.trim().slice(0, 24) : "",
+      question,
+      options: options.slice(0, MAX_OPTIONS),
+      multiSelect: q.multiSelect === true,
+    });
+  }
+  return out;
 }
 
 function approvalTarget(tool: string, input: Record<string, unknown>): string {
@@ -200,6 +238,58 @@ function handleHook(island: Island, payload: HookPayload) {
     }
   };
 
+  /**
+   * Open the question card, or decline when we cannot answer it honestly.
+   *
+   * One card, one request, exactly like the approval path: a second question
+   * that arrives while one is on screen is declined so the first is not
+   * silently replaced. Anything the parser rejects goes back to the terminal,
+   * which is where Claude Code would have asked anyway.
+   */
+  const openQuestion = (): boolean => {
+    const requestId = payload.request_id ?? "";
+    const questions = parseAskQuestions(payload.tool_input?.questions);
+    if (!questions || questions.some((q) => q.options.length === 0)) {
+      if (requestId) void Bridge.approvalDecline(requestId);
+      return false;
+    }
+    if (State.pendingQuestion && State.pendingQuestion.requestId !== requestId) {
+      if (requestId) void Bridge.approvalDecline(requestId);
+      return false;
+    }
+    if (pendingTimeout != null) window.clearTimeout(pendingTimeout);
+    upsert(projectName, cwd);
+    State.pendingQuestion = {
+      requestId,
+      sessionId: payload.session_id ?? "",
+      questions,
+      index: 0,
+      answers: {},
+      freeText: "",
+    };
+    // The relay's ack window closes in 800 ms and everything below is
+    // synchronous, so the card is really up by the time it lands.
+    if (requestId) void Bridge.approvalAck(requestId);
+    State.updateTask(CLAUDE_ID, "approval");
+    State.isPinned = true;
+    Sound.play("approval");
+    surface("question", true);
+    // Coucou answers within 108 s or not at all; after that the terminal has
+    // taken over and a card still on screen would be lying.
+    pendingTimeout = window.setTimeout(() => {
+      pendingTimeout = null;
+      if (!State.pendingQuestion) return;
+      State.pendingQuestion = null;
+      State.isPinned = false;
+      island.dropPin();
+      State.updateTask(CLAUDE_ID, "working");
+      State.setPillBadge(CLAUDE_ID, null);
+      if (State.view === "question") island.setView(State.defaultView());
+      State.notify();
+    }, QUESTION_TIMEOUT_MS);
+    return true;
+  };
+
   switch (name) {
     case "SessionStart":
       ensurePill();
@@ -221,6 +311,14 @@ function handleHook(island: Island, payload: HookPayload) {
       ensurePill();
       State.updateTask(agentId, "working");
       const tool = payload.tool_name ?? "Tool";
+      // The one PreToolUse that waits: Claude Code 2.1.85+ sends
+      // AskUserQuestion here, on the dedicated `--ask` hook. The general
+      // PreToolUse entry also fires for it and is the fire-and-forget path
+      // below, which is why the island only opens a card when the relay sent a
+      // request id — that id only exists on the ask hook's connection.
+      if (tool === "AskUserQuestion" && payload.request_id) {
+        if (openQuestion()) break;
+      }
       State.appendStep(agentId, stepLabel(tool, payload.tool_input ?? {}));
       surface("overview", false);
       break;
@@ -359,4 +457,92 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
   }
   State.notify();
+}
+
+// ── Answering a question ─────────────────────────────────────────────────────
+
+/** Everything the card needs to finish: clear it, hand the answers over, let go
+ *  of the pin. Shared by the three ways a question can end. */
+function finishQuestion(island: Island, decision: "answer" | "ask") {
+  const q = State.pendingQuestion;
+  if (!q) return null;
+  if (pendingTimeout != null) {
+    window.clearTimeout(pendingTimeout);
+    pendingTimeout = null;
+  }
+  if (decision === "answer") {
+    void Bridge.questionAnswer(q.requestId, q.answers);
+    void Bridge.log(`answered ${Object.keys(q.answers).length} question(s)`);
+  } else {
+    // No decision: the relay writes nothing back and coucou-hook prints nothing,
+    // so Claude Code asks the question again in the terminal.
+    void Bridge.approvalDecline(q.requestId);
+    void Bridge.log("question released to the terminal");
+  }
+  State.pendingQuestion = null;
+  State.isPinned = false;
+  island.dropPin();
+  State.updateTask(CLAUDE_ID, "working");
+  State.setPillBadge(CLAUDE_ID, null);
+  State.notify();
+  island.setView(State.defaultView());
+  return q;
+}
+
+/** Single-select: a click is the answer. Multi-select: a toggle, and Send. */
+export function pickOption(island: Island, label: string) {
+  const q = State.pendingQuestion;
+  const question = State.currentQuestion;
+  if (!q || !question) return;
+  if (question.multiSelect) {
+    const current = Array.isArray(q.answers[question.question])
+      ? [...(q.answers[question.question] as string[])]
+      : [];
+    const at = current.indexOf(label);
+    if (at >= 0) current.splice(at, 1);
+    else current.push(label);
+    q.answers[question.question] = current;
+    Sound.play("blip");
+    State.notify();
+    return;
+  }
+  q.answers[question.question] = label;
+  Sound.play("approve");
+  finishQuestion(island, "answer");
+}
+
+/** The free-text "Other…" field: its text replaces whatever was picked. */
+export function setFreeText(_island: Island, text: string) {
+  const q = State.pendingQuestion;
+  const question = State.currentQuestion;
+  if (!q || !question) return;
+  q.freeText = text;
+  if (text.trim()) q.answers[question.question] = text.trim();
+  else delete q.answers[question.question];
+  State.notify();
+}
+
+/** Send / Next. The last question, or a multi-select one, is what sends. */
+export function submitQuestion(island: Island) {
+  const q = State.pendingQuestion;
+  if (!q) return;
+  const question = q.questions[q.index];
+  if (!question) return;
+  const answered = q.answers[question.question];
+  const empty = answered === undefined || answered === "" || (Array.isArray(answered) && !answered.length);
+  if (empty) return;
+  if (q.index < q.questions.length - 1) {
+    q.index += 1;
+    q.freeText = "";
+    Sound.play("blip");
+    State.notify();
+    return;
+  }
+  Sound.play("approve");
+  finishQuestion(island, "answer");
+}
+
+/** "Reply in terminal" — the same thing as not answering, said out loud. */
+export function replyInTerminal(island: Island) {
+  finishQuestion(island, "ask");
 }
