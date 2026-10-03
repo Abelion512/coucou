@@ -312,14 +312,16 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
 }
 
 /// Copies the coucou-hook relay into ~/.local/share/coucou/bin on launch.
+///
 /// In a bundled install it comes from the app resources; in `tauri dev` it sits
 /// next to the coucou binary in the workspace target directory.
 ///
 /// Every candidate is tried rather than just the first, because getting this
-/// wrong is silent and fatal: `resources` used to be a glob, which made NSIS
-/// mirror the source path into `_up_\target\release\`, no candidate matched, and
-/// the relay was simply never installed. It only looked healthy on a developer
-/// machine, where a leftover copy from `tauri dev` was already sitting in bin/.
+/// wrong is silent and fatal: `resources` used to be the bare path, and Tauri
+/// preserves a path's structure, so `../target/release/coucou-hook` landed as
+/// `$RESOURCE/_up_/target/release/coucou-hook` — a path nothing looked in. The
+/// config now maps it to `$RESOURCE/coucou-hook` (first candidate); the rest
+/// only exist for `tauri dev`, where no resources are bundled at all.
 pub fn ensure_hook_exe(app: &AppHandle) {
     let dest = settings::hook_exe_path();
     let Some(dir) = dest.parent() else { return };
@@ -334,12 +336,10 @@ pub fn ensure_hook_exe(app: &AppHandle) {
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            // Installed build, then `tauri dev` (target/debug) next to the
-            // release hook the pre-build step produces.
+            // `tauri dev` (target/debug) next to the release hook the pre-build
+            // step produces, and a binary run straight out of target/release.
             candidates.push(parent.join(hook_name));
             candidates.push(parent.join(format!("../release/{hook_name}")));
-            // Belt and braces: where the old glob form used to land it.
-            candidates.push(parent.join(format!("_up_/target/release/{hook_name}")));
         }
     }
 
@@ -352,29 +352,48 @@ pub fn ensure_hook_exe(app: &AppHandle) {
         return;
     };
 
-    let same = match (std::fs::metadata(&src), std::fs::metadata(&dest)) {
-        (Ok(a), Ok(b)) => a.len() == b.len() && a.modified().ok() == b.modified().ok(),
-        _ => false,
-    };
-    if same {
+    // Same bytes as what is already installed: leave it alone. Comparing
+    // content rather than size and mtime is the point — a hook fires many
+    // times a minute and can be executing this file while we decide.
+    if same_contents(&src, &dest) {
         return;
     }
-    // A hook may be running right now and hold the file open; keeping the old
-    // copy is fine, it is the same relay.
-    if let Err(err) = std::fs::copy(&src, &dest) {
+    // Write beside it and rename: a running hook keeps the inode it mapped, so
+    // a replacement can never pull the file out from under it. A plain copy
+    // truncates in place, which is how a Claude Code session dies on ETXTBSY.
+    let temp = dir.join(format!(".{hook_name}.new"));
+    let installed = std::fs::copy(&src, &temp)
+        // The relay runs hooks with the user's privileges and talks to a socket
+        // in $XDG_RUNTIME_DIR: it must be executable by exactly its owner.
+        .and_then(|_| set_owner_only(&temp))
+        .and_then(|_| std::fs::rename(&temp, &dest));
+    if let Err(err) = installed {
+        let _ = std::fs::remove_file(&temp);
         if !dest.exists() {
             crate::log::line(format!("could not install {hook_name}: {err}"));
         }
     }
-    // The relay runs hooks with the user's privileges and talks to a socket in
-    // $XDG_RUNTIME_DIR: it must be executable by exactly its owner.
-    #[cfg(unix)]
-    if let Ok(meta) = std::fs::metadata(&dest) {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = meta.permissions();
-        perms.set_mode(0o700);
-        let _ = std::fs::set_permissions(&dest, perms);
-    }
+}
+
+#[cfg(unix)]
+fn set_owner_only(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn set_owner_only(_path: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// True when both files exist and hold the same bytes.
+///
+/// Length first, because it rules out every real upgrade in a single stat and
+/// a size mismatch can never be a match.
+fn same_contents(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) else { return false };
+    ma.len() == mb.len() && !ma.is_dir() && !mb.is_dir()
+        && std::fs::read(a).is_ok_and(|x| std::fs::read(b).is_ok_and(|y| x == y))
 }
 
 // ── Minimal unified diff (LCS) ────────────────────────────────────────────────
@@ -588,6 +607,32 @@ mod tests {
         assert!(preview(true).is_err());
         assert!(write(true, "whatever").is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"{ broken");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// The rule that keeps a running hook alive: identical bytes means the
+    /// installed file is not touched. The old size-and-mtime test never fired —
+    /// `fs::copy` stamps the copy with the current time — so every launch
+    /// truncated the binary in place while Claude Code could be executing it.
+    #[test]
+    fn an_unchanged_relay_is_never_rewritten() {
+        let tmp = std::env::temp_dir().join(format!("coucou-relay-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (src, dest) = (tmp.join("src"), tmp.join("dest"));
+
+        std::fs::write(&src, b"#!/bin/sh\nexit 0\n").unwrap();
+        assert!(!same_contents(&src, &dest), "a missing file is never the same");
+
+        std::fs::write(&dest, b"#!/bin/sh\nexit 0\n").unwrap();
+        assert!(same_contents(&src, &dest), "same bytes, different files");
+
+        // Same size, different bytes: the case a length check alone would miss.
+        std::fs::write(&dest, b"#!/bin/sh\nexit 1\n").unwrap();
+        assert!(!same_contents(&src, &dest), "equal length is not equal content");
+
+        assert!(!same_contents(&src, &tmp), "a directory is not a relay");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

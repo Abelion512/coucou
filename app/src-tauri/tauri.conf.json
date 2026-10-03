@@ -40,7 +40,9 @@
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage"],
-    "resources": ["../target/release/coucou-hook"],
+    "resources": {
+      "../target/release/coucou-hook": "coucou-hook"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
