@@ -12,10 +12,6 @@ from this repository.
   island only tinted itself for integration pills — the three adapters this fork
   exists for were the one case it skipped. It now follows whatever pill is
   focused, the same way the pill's own mini Mochi already did
-- **Mochi answers in English.** The assistant was told to "respond in the user's
-  language", so a session in Indonesian or French got its answers back that way
-  while the island, the docs and the specs stayed English. It now always answers
-  in English, whatever you write in
 - **The model list is what you use, not what the relay sells.** A relay like 9router
   offers 1013 models; rendering them in a dropdown is unreadable and slow. Typed model
   ids are remembered (newest first, twelve deep) and the dropdown is the Claude
