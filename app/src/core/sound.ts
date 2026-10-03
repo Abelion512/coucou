@@ -32,15 +32,17 @@ class SoundEngine {
       this.ctx = ctx;
       const master = ctx.createGain();
       master.gain.value = this.gainFor(this.volume);
-      // The slider goes past unity on purpose (see gainFor), so the last stretch
-      // of it has to be able to make a peak without the DAC clipping it. A
-      // limiter after the gain is what lets max Coucou be louder than max
-      // device; without one it is only ever distorted.
+      // The limiter is what lets the slider go past unity without turning into
+      // noise — but only if it is set right. Web Audio caps `threshold` at
+      // 0 dBFS, so a limiter parked at -3 dB does not merely guard the peaks,
+      // it *quietens the whole sound*: typical material sits at -13 dBFS, lands
+      // above that threshold, and gets pulled down. That is why "max" felt weak
+      // even at gain 4. At 0 dB it only touches what is actually over full scale.
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -3;
+      limiter.threshold.value = 0;
       limiter.knee.value = 0;
       limiter.ratio.value = 20;
-      limiter.attack.value = 0.003;
+      limiter.attack.value = 0.002;
       limiter.release.value = 0.08;
       master.connect(limiter);
       limiter.connect(ctx.destination);
@@ -99,22 +101,24 @@ class SoundEngine {
   /**
    * Slider 0–1 → gain, and gain goes well past 1.
    *
-   * A Web Audio gain of 1 means "as loud as the system's own maximum", which made
-   * Coucou at 100% no louder than the laptop at 100% — so the only way to hear
-   * it was to have the system volume up, which is exactly what a notifier should
-   * not need. The target is the opposite: Coucou at max, with the device turned
-   * *down*, should be as loud as Coucou at max with the device at max.
+   * A Web Audio gain of 1 means "a full-scale source", which is still only as
+   * loud as the system mixer allows. Measured on this machine: the 28 sounds
+   * peak at -13 dBFS on average, so a gain of 1 would play them a seventh of
+   * full volume — the "max" that was inaudible across a desk.
    *
-   * That means compensating for the system mixer: at 30% the mixer passes roughly
-   * 0.3 of the amplitude, so the peak gain is 1 / 0.3 ≈ 3.3. It is set a little
-   * above that (4.0 ≈ +12 dB) so a device parked at 25% still lands on top of
-   * the full-volume result, and the limiter downstream keeps the peaks clean
-   * instead of clipping them. The curve is not linear: above the midpoint the
-   * slider is where it needs to be sensitive, and below it, quiet should stay
-   * quiet.
+   * The gain tops out at 12 (+22 dB), which puts a typical sound right at full
+   * scale and lets the limiter hold the peaks there instead of clipping them.
+   * That is the physical ceiling for this path: PulseAudio will not amplify
+   * past 100 % unless the session carries the `overamplification` flag, which
+   * is a GNOME setting Cinnamon does not offer, so nothing after the gain can
+   * make the sound louder than a full-scale sample. Past this point only the
+   * system volume can help.
+   *
+   * The curve is not linear: the quiet half of the slider should stay quiet, so
+   * it is where the exponential does its work.
    */
   private gainFor(v: number): number {
-    return Math.pow(v, 1.6) * 4;
+    return Math.pow(v, 1.6) * 12;
   }
 
   setEnabled(on: boolean) {
