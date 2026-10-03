@@ -62,10 +62,17 @@ jobs:
       # The version lives in three files and a tag. A release published under the
       # wrong number is the failure nobody notices until a bug report contradicts
       # it, so it is checked before anything is built.
+      #
+      # These two steps run from the repository root, not from `app`: they check
+      # files outside the workspace directory, and `working-directory: app` above
+      # applies to every step unless a step says otherwise. Both used to fail
+      # with "No such file or directory" — the workflow was green nowhere.
       - name: Version is consistent
+        working-directory: ${{ github.workspace }}
         run: ./scripts/version.sh check
 
       - name: DEBT sweep (advisory)
+        working-directory: ${{ github.workspace }}
         run: ./scripts/auto_ponytail.sh --quiet
 
       - name: Build bundles (.deb + AppImage)
@@ -75,8 +82,6 @@ jobs:
         run: |
           cargo build --release -p coucou-hook
           bunx tauri build
-          echo "version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')" >> $GITHUB_OUTPUT
-        id: pack
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/linux-v')
