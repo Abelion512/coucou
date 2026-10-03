@@ -304,6 +304,16 @@ fn agents_status() -> Vec<agents::AgentStatus> {
     agents::status()
 }
 
+/// "I am listening now" — re-sends every session the adapters already found.
+///
+/// Events raised before the island subscribed went to a webview that had not
+/// registered its handler yet, and no adapter repeats itself, so an agent that
+/// was running from the first second stayed invisible all session.
+#[tauri::command]
+fn agents_sync(app: tauri::AppHandle) {
+    agents::replay(&app);
+}
+
 /// Lets the island write to the same log as the Rust side.
 #[tauri::command]
 fn log_line(message: String) {
@@ -566,6 +576,7 @@ pub fn run() {
             secret_clear,
             refresh_integration,
             agents_status,
+            agents_sync,
             chat_models_check,
             open_n8n,
             open_settings_window,

@@ -15,6 +15,7 @@ pub mod hermes;
 pub mod opencode;
 
 use serde::Serialize;
+use std::sync::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Which agent a task or event belongs to. Serialized camelCase for the front
@@ -149,6 +150,48 @@ pub fn start(app: tauri::AppHandle, bus: &AgentBus) {
 
 /// Forwards an adapter event to the island as an `agent` Tauri event.
 pub fn emit(app: &tauri::AppHandle, event: &AgentEvent) {
+    remember(event);
     use tauri::Emitter;
     let _ = app.emit("agent", event);
+}
+
+/// The most recent `SessionStart` per agent, so a front end that subscribes
+/// *after* an adapter found its session still draws the pill.
+///
+/// The window exists before the webview has finished loading, and an adapter
+/// that answers in that gap announces itself to nobody: OpenCode's server is a
+/// loopback HTTP call away and connects in about a second, so on a machine
+/// where `opencode serve` was already running its `SessionStart` was the very
+/// first event of the app's life. The adapter's own `LAST_SESSION` guard then
+/// stops it repeating itself, and the agent stays invisible for the rest of the
+/// session — which is what "why can't I see OpenCode in the island" was.
+static LAST_SESSION_START: Mutex<Vec<(Agent, AgentEvent)>> = Mutex::new(Vec::new());
+
+fn remember(event: &AgentEvent) {
+    let Ok(mut remembered) = LAST_SESSION_START.lock() else { return };
+    match event {
+        AgentEvent::SessionStart { agent, .. } => {
+            remembered.retain(|(a, _)| a != agent);
+            remembered.push((*agent, event.clone()));
+        }
+        // An agent that stopped must not come back as a pill on the next replay.
+        AgentEvent::State { agent, state: AgentState::Unavailable } => {
+            remembered.retain(|(a, _)| a != agent);
+        }
+        _ => {}
+    }
+}
+
+/// Re-sends every session the adapters have already found. The island calls
+/// this once its handlers are registered, which turns "whatever happened before
+/// I existed" from a permanent hole into a snapshot.
+pub fn replay(app: &tauri::AppHandle) {
+    let snapshot = LAST_SESSION_START
+        .lock()
+        .map(|remembered| remembered.iter().map(|(_, e)| e.clone()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    for event in &snapshot {
+        use tauri::Emitter;
+        let _ = app.emit("agent", event);
+    }
 }

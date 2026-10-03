@@ -193,7 +193,7 @@ pub async fn send(
 
     let Some(blocks) = response.get("content").and_then(Value::as_array).cloned() else {
         chat.pop();
-        return Err("Unexpected API response.".into());
+        return Err(describe(&response));
     };
 
     // Store the whole content — tool_use / tool_result blocks included — so the
@@ -213,6 +213,40 @@ pub async fn send(
         return Err("No response text.".into());
     }
     Ok(ChatReply { text })
+}
+
+/// What a 200 that is not a Messages response actually was.
+///
+/// "Unexpected API response." was technically true and useless: a relay that
+/// answers in OpenAI's shape, a proxy that wraps an error in a 200, and a
+/// gateway that returns HTML all land on that same sentence, and the one thing
+/// the user can act on — looking at what came back — is exactly what the
+/// message refuses to show. Nothing secret is in here: it is the response body,
+/// truncated.
+fn describe(response: &Value) -> String {
+    if let Some(message) = response
+        .get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(Value::as_str)
+    {
+        return format!("Relay returned an error: {message}");
+    }
+    // An OpenAI-shaped relay: choices[0].message.content
+    if let Some(text) = response
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|c| c.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(Value::as_str)
+    {
+        return format!("This relay answers in OpenAI's format, not Anthropic's: {text}");
+    }
+    let fields: Vec<&str> =
+        response.as_object().map(|o| o.keys().map(String::as_str).collect()).unwrap_or_default();
+    let listed = if fields.is_empty() { "nothing".to_string() } else { fields.join(", ") };
+    let preview: String = response.to_string().chars().take(160).collect();
+    format!("Relay answered 200 with no messages content (fields: {listed}). {preview}")
 }
 
 async fn call(key: Option<&str>, api_base: Option<&str>, body: &Value) -> Result<Value, String> {
@@ -319,7 +353,28 @@ fn base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{base64, is_loopback};
+    use super::{base64, describe, is_loopback};
+    use serde_json::json;
+
+    /// A relay that answers 200 with something else used to produce the same
+    /// three words for every cause, which is the one thing an error message
+    /// must not be. Each shape a real relay actually returns has to name itself.
+    #[test]
+    fn a_wrong_shaped_200_says_what_actually_came_back() {
+        let wrapped = describe(&json!({"error": {"message": "model hermes-aux not found"}}));
+        assert!(wrapped.contains("model hermes-aux not found"), "got: {wrapped}");
+
+        let openai = describe(&json!({"choices": [{"message": {"content": "hello"}}]}));
+        assert!(openai.contains("OpenAI"), "got: {openai}");
+
+        let html = describe(&json!("<!doctype html><title>proxy</title>"));
+        assert!(html.contains("no messages content"), "got: {html}");
+
+        // Nothing here may echo anything credential-shaped.
+        for text in [&wrapped, &openai, &html] {
+            assert!(!text.contains("sk-"), "a key leaked into an error: {text}");
+        }
+    }
 
     /// The key is the one credential this app holds, and `api_base` is a plain
     /// string in a world-readable JSON file — so a relay only ever sees it when

@@ -140,6 +140,31 @@ class AppState {
   chatHistory: ChatMessage[] = [];
   pendingApproval: ApprovalInfo | null = null;
 
+  /**
+   * "Allow for the rest of this session", per Claude Code session.
+   *
+   * Keyed on the tool *and* what it was asked to do, because "always allow
+   * Bash" is how an agent ends up running anything, and "always allow
+   * `git status`" is what a person means when they click it. In memory only:
+   * restarting Coucou forgets every rule, and ~/.claude/settings.json is never
+   * touched, so nothing here outlives the session it was granted in.
+   */
+  private sessionAllow = new Map<string, Set<string>>();
+
+  rememberApproval(sessionId: string, tool: string, command: string) {
+    if (!sessionId) return;
+    const key = `${tool} · ${command}`;
+    const set = this.sessionAllow.get(sessionId) ?? new Set<string>();
+    set.add(key);
+    this.sessionAllow.set(sessionId, set);
+  }
+
+  /** True when this exact request was already answered "always" this session. */
+  approvalRemembered(sessionId: string, tool: string, command: string): boolean {
+    if (!sessionId) return false;
+    return this.sessionAllow.get(sessionId)?.has(`${tool} · ${command}`) === true;
+  }
+
   integrations: Record<string, IntegrationInfo> = {};
 
   lastActivity = performance.now();

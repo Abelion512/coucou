@@ -31,8 +31,19 @@ class SoundEngine {
       const ctx = new Ctor();
       this.ctx = ctx;
       const master = ctx.createGain();
-      master.gain.value = this.volume;
-      master.connect(ctx.destination);
+      master.gain.value = this.gainFor(this.volume);
+      // The slider goes past unity on purpose (see gainFor), so the last stretch
+      // of it has to be able to make a peak without the DAC clipping it. A
+      // limiter after the gain is what lets max Coucou be louder than max
+      // device; without one it is only ever distorted.
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -3;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.08;
+      master.connect(limiter);
+      limiter.connect(ctx.destination);
       this.master = master;
       await Promise.all(
         SOUND_NAMES.map(async (name) => {
@@ -76,12 +87,23 @@ class SoundEngine {
   }
 
   setVolume(v: number) {
-    // 0–1 is the Web Audio range, and 1 is the real maximum. The old ceiling of
-    // 0.2 came from the macOS player and meant that even at "max" in Settings a
-    // sound played at a fifth of the volume the system itself would have used,
-    // which is inaudible across a desk.
     this.volume = Math.max(0, Math.min(1, v));
-    if (this.master) this.master.gain.value = this.volume;
+    if (this.master) this.master.gain.value = this.gainFor(this.volume);
+  }
+
+  /**
+   * Slider 0–1 → gain, and gain goes past 1.
+   *
+   * A Web Audio gain of 1 means "as loud as the system's own maximum", which made
+   * Coucou at 100% no louder than the laptop at 100% — the thing nobody wants
+   * from a notifier across a desk. The curve tops out at 2.4× (about +7.6 dB),
+   * so Coucou at maximum lands roughly where the device does with a bit of headroom
+   * still available, and a limiter downstream keeps the peaks clean. It is a
+   * curve rather than a straight scale so the quiet half of the slider stays
+   * quiet instead of everything above the middle being the same loud.
+   */
+  private gainFor(v: number): number {
+    return Math.pow(v, 1.6) * 2.4;
   }
 
   setEnabled(on: boolean) {

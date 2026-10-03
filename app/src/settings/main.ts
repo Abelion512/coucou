@@ -4,6 +4,7 @@
 
 import "./settings.css";
 import { Bridge, onEvent, type AgentStatus, type HookStatus } from "../core/bridge";
+import { AGENTS_META } from "../core/agents-meta";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
@@ -497,12 +498,8 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
 
 // ── Agents section ────────────────────────────────────────────────────────────
 
-/** Serde ids. Colours match the pills in the island. */
-const AGENT_META: Record<string, { name: string; color: string; how: string }> = {
-  opencode: { name: "OpenCode", color: "#5D9CFF", how: "opencode serve --port 54321" },
-  hermes: { name: "Hermes", color: "#FFD700", how: "hermes gateway run" },
-  freebuff: { name: "Freebuff", color: "#2DD4BF", how: "run freebuff and send a message" },
-};
+/** Serde ids. Colours match the pills in the island — one table, both places. */
+const AGENT_META = AGENTS_META;
 
 /**
  * The three watched agents.

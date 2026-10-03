@@ -6,6 +6,7 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { Ticker } from "./ticker";
 import { State, type AgentTask } from "../core/state";
+import { agentName } from "../core/agents-meta";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
@@ -20,7 +21,7 @@ export interface ViewActions {
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
-  decide(d: "allow" | "deny"): void;
+  decide(d: "allow" | "deny" | "always"): void;
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
@@ -75,19 +76,30 @@ function btn(
 function sourceLabel(task: AgentTask | null): string {
   if (!task) return "";
   if (task.source === "n8n") return "n8n";
-  if (task.source === "agent") {
-    const step = task.steps[task.stepIndex] ?? task.steps[task.steps.length - 1];
-    // The step is the live activity — "gateway · v0.21.5 · 0 active" for Hermes,
-    // the session title for OpenCode. Truncated: this is a chip, not a card.
-    return step ? step.split("·")[0].trim().slice(0, 28) : "agent";
-  }
+  // A pill is an agent, so its chip says which one. The session or model the
+  // adapter reported is the first step and rides the ticker, where it has room;
+  // as a chip it was the same word twice ("Hermes hermes-aux").
+  if (task.source === "agent") return agentName(task.id);
   return "Claude Code";
+}
+
+/**
+ * The name on a card.
+ *
+ * A Claude Code card used to show the *folder* the session happened to be in,
+ * so an approval asked from ~/…/coucou read "coucou needs permission" — as
+ * though a project were the one asking. The card names the agent; the folder is
+ * what the ticker and the ↗ button are for.
+ */
+function whoName(task: AgentTask | null): string {
+  if (!task) return "Claude Code";
+  return task.source === "agent" ? agentName(task.id) : "Claude Code";
 }
 
 function agentWho(task: AgentTask | null, label: string): HTMLElement {
   const row = h("div", { class: "who-row" });
   if (task) {
-    row.append(dot(task.color, 8), h("span", { class: "n", text: task.name }));
+    row.append(dot(task.color, 8), h("span", { class: "n", text: whoName(task) }));
   }
   row.append(h("span", { text: label }));
   return row;
@@ -353,9 +365,17 @@ function buildApproval(actions: ViewActions): ViewHost {
       // question text — the one line on this card that must be readable — into a
       // clipped half-height.
       if (isQuestion) row.append(h("div", { class: "sub", text: "Answer in your terminal." }));
+      // A question cannot be answered from here at all, so it gets one button
+      // and a way home. A real approval gets the three choices it actually has:
+      // reject it, allow this once, or stop asking for the rest of the session.
       row.append(
-        btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-        btn(isQuestion ? "Reply in terminal" : "Allow", "primary", () => actions.decide("allow"), "Y"),
+        btn(isQuestion ? "Cancel" : "Reject", "secondary", () => actions.decide("deny"), "N"),
+        ...(isQuestion
+          ? [btn("Reply in terminal", "primary", () => actions.decide("allow"), "Y")]
+          : [
+              btn("Once", "secondary", () => actions.decide("allow"), "Y"),
+              btn("Always", "primary", () => actions.decide("always"), "A"),
+            ]),
       );
     },
   };

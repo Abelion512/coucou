@@ -6,7 +6,8 @@
 // Per docs/SPEC-agent-pills.md: observe-only, one pill per agent (not per
 // session), no front-end polling, no sound, and no PermissionReq path.
 
-import { onEvent } from "../core/bridge";
+import { Bridge, onEvent } from "../core/bridge";
+import { AGENTS_META } from "../core/agents-meta";
 import { State, type AgentTask } from "../core/state";
 import type { BotStateName } from "../core/layout";
 
@@ -14,17 +15,12 @@ import type { BotStateName } from "../core/layout";
 type AgentId = "opencode" | "hermes" | "freebuff" | "claude-code";
 
 /** The three this fork watches. Claude Code keeps its own hook path. */
-interface AgentMeta {
-  name: string;
-  color: string;
-}
-
-const AGENTS: Record<AgentId, AgentMeta | null> = {
-  opencode: { name: "OpenCode", color: "#5D9CFF" },
-  hermes: { name: "Hermes", color: "#FFD700" },
-  freebuff: { name: "Freebuff", color: "#2DD4BF" },
+const AGENTS: Record<AgentId, boolean> = {
+  opencode: true,
+  hermes: true,
+  freebuff: true,
   // Claude Code events arrive on the `hook` socket, not here.
-  "claude-code": null,
+  "claude-code": false,
 };
 
 /** Serde `AgentState` → the bot states the island already knows how to draw. */
@@ -59,7 +55,7 @@ const pillId = (agent: AgentId) => `agent_${agent}`;
 const lastState = new Map<AgentId, string>();
 
 function ensurePill(agent: AgentId): AgentTask | null {
-  const meta = AGENTS[agent];
+  const meta = AGENTS_META[agent];
   if (!meta) return null;
   State.upsertExternalAgent(pillId(agent), meta.name, meta.color);
   return State.tasks.find((t) => t.id === pillId(agent)) ?? null;
@@ -96,12 +92,17 @@ export function registerAgentHandlers() {
       case "sessionStart": {
         const task = ensurePill(agent);
         if (!task) return;
-        if (event.project) task.name = event.project;
+        // The pill keeps the agent's name. What the adapter reports as the
+        // project is a session slug — "hermes-aux", a model id — and putting it
+        // on the pill left the island reading "hermes-aux" where it should read
+        // "Hermes". It is not lost: it is the first thing the ticker shows.
         if (event.cwd) task.sessionCwd = event.cwd;
+        const label = event.project?.trim();
+        if (label) task.steps = [label.slice(0, 60)];
         if (event.sessionId && event.sessionId !== "server") {
-          task.steps = [`session ${event.sessionId.slice(0, 8)}`];
-          task.stepIndex = 0;
+          task.steps.push(`session ${event.sessionId.slice(0, 8)}`);
         }
+        task.stepIndex = 0;
         State.updateTask(id, "idle");
         State.notify();
         break;
@@ -157,5 +158,15 @@ export function registerAgentHandlers() {
       default:
         break;
     }
-  });
+  })
+    // Everything above this line was a race. The window exists before the
+    // webview has subscribed, and an adapter that answers in that gap — an
+    // OpenCode server that was already running connects in about a second — is
+    // heard by nobody and never repeats itself. Asking for a snapshot of what is
+    // already known turns "running but invisible" into a pill.
+    //
+    // It has to wait for the `listen` promise above: Tauri drops an event whose
+    // listener is not registered yet, so syncing in parallel with subscribing
+    // reproduces the very bug this is fixing.
+    .then(() => Bridge.agentsSync());
 }

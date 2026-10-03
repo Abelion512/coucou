@@ -72,12 +72,24 @@ export const Bridge = {
   hooksApply: (install: boolean, fingerprint: string) =>
     callOrThrow<string>("hooks_apply", { install, fingerprint }),
 
-  approvalDecision: (requestId: string, decision: "allow" | "deny") =>
+  /**
+   * The relay sends Claude Code a plain allow either way — remembering it is
+   * Coucou's business (see hook/src/decision.rs), so "always" is a valid answer
+   * on the wire and only means something to the island.
+   */
+  approvalDecision: (requestId: string, decision: "allow" | "deny" | "always") =>
     call<void>("approval_decision", { requestId, decision }),
   /** "The card is up" — until this lands the relay only waits a moment. */
   approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
   /** "Nobody can act on this" — Claude Code asks in the terminal right away. */
   approvalDecline: (requestId: string) => call<void>("approval_decline", { requestId }),
+
+  /**
+   * "I am listening now." An adapter that found its session before the island's
+   * handlers existed never repeats itself, so without this the agent is running
+   * and invisible for the rest of the session.
+   */
+  agentsSync: () => call<void>("agents_sync"),
 
   // ── Chat, files, secrets ──────────────────────────────────────────────────
   /** One chat turn. The API key and any file bytes never leave Rust. */

@@ -304,6 +304,20 @@ function handleHook(island: Island, payload: HookPayload) {
       }
 
       const requestId = payload.request_id ?? "";
+      const tool = payload.tool_name ?? "Tool";
+      const input = payload.tool_input ?? {};
+      const command = approvalTarget(tool, input);
+      const sessionId = payload.session_id ?? "";
+      // "Always" was clicked for this exact tool and target earlier in this
+      // Claude Code session, so there is nothing left to ask: answer it and get
+      // out of the way. The card never appears, which is the point of the button.
+      if (State.approvalRemembered(sessionId, tool, command)) {
+        if (requestId) void Bridge.approvalAck(requestId);
+        if (requestId) void Bridge.approvalDecision(requestId, "allow");
+        void Bridge.log(`auto-allow ${command}`);
+        upsert(projectName, cwd);
+        break;
+      }
       // One card, one request. A second one must never quietly replace the first
       // — that would leave a human staring at request B while request A waits for
       // a decision nobody can give. Hand it straight back to the terminal.
@@ -313,13 +327,11 @@ function handleHook(island: Island, payload: HookPayload) {
       }
       upsert(projectName, cwd);
       if (pendingTimeout != null) window.clearTimeout(pendingTimeout);
-      const tool = payload.tool_name ?? "Tool";
-      const input = payload.tool_input ?? {};
       State.pendingApproval = {
         requestId,
-        sessionId: payload.session_id ?? "",
+        sessionId,
         tool,
-        command: approvalTarget(tool, input),
+        command,
       };
       // The relay's short ack window closes in 800 ms; everything below this
       // line is synchronous, so the card really is up by the time it lands.

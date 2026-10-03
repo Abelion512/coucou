@@ -168,6 +168,12 @@ export class Island {
         void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
         if (!req) return;
         Sound.play(d === "deny" ? "blip" : "approve");
+        // "Always" is remembered here, not in ~/.claude/settings.json. Claude Code
+        // is only told `allow` — the relay's own contract already said so — and
+        // Coucou keeps the rule for the rest of the Claude Code session, in memory.
+        // Nothing on disk changes and nothing survives a restart, which is exactly
+        // what "for this session" should mean.
+        if (d === "always") State.rememberApproval(req.sessionId, req.tool, req.command);
         void Bridge.approvalDecision(req.requestId, d);
         State.pendingApproval = null;
         State.isPinned = false;
