@@ -221,6 +221,7 @@ fn approval_decision(app: AppHandle, request_id: String, decision: String) {
     relay::answer(&app, &request_id, &decision);
 }
 
+
 /// The island has the card on screen, so the long wait for a human may begin.
 /// Until this arrives the relay only waits a few hundred milliseconds, which is
 /// what stops a paused or unresponsive island from freezing Claude Code.

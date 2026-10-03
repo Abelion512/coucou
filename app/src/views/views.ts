@@ -365,16 +365,24 @@ function buildApproval(actions: ViewActions): ViewHost {
       // question text — the one line on this card that must be readable — into a
       // clipped half-height.
       if (isQuestion) row.append(h("div", { class: "sub", text: "Answer in your terminal." }));
+      // No key badges, and that is deliberate rather than unfinished. The island
+      // is a Dock window with `accept_focus(false)`, and a window manager will
+      // not hand the keyboard to one: a global X11 grab, `accept_focus(true)`
+      // and a temporary Dialog type hint were all tried, and none of them gets a
+      // keypress into WebKit on this desktop. A letter printed on a button that
+      // cannot be pressed is a promise the app breaks at the exact moment the
+      // user most needs it to hold.
+      //
       // A question cannot be answered from here at all, so it gets one button
       // and a way home. A real approval gets the three choices it actually has:
       // reject it, allow this once, or stop asking for the rest of the session.
       row.append(
-        btn(isQuestion ? "Cancel" : "Reject", "secondary", () => actions.decide("deny"), "N"),
+        btn(isQuestion ? "Cancel" : "Reject", "secondary", () => actions.decide("deny")),
         ...(isQuestion
-          ? [btn("Reply in terminal", "primary", () => actions.decide("allow"), "Y")]
+          ? [btn("Reply in terminal", "primary", () => actions.decide("allow"))]
           : [
-              btn("Once", "secondary", () => actions.decide("allow"), "Y"),
-              btn("Always", "primary", () => actions.decide("always"), "A"),
+              btn("Once", "secondary", () => actions.decide("allow")),
+              btn("Always", "primary", () => actions.decide("always")),
             ]),
       );
     },

@@ -17,7 +17,15 @@ export interface AgentMeta {
 export const AGENTS_META: Record<string, AgentMeta> = {
   // Grey on purpose: OpenCode is the one that is usually just there. A blue
   // pill read as "something is happening" when most of the time nothing is.
-  opencode: { name: "OpenCode", color: "#8A8F98", how: "opencode serve --port 54321" },
+  // The "how" is not decoration. `opencode serve` runs a *separate* server from
+  // the one a plain `opencode` TUI talks to — the TUI brings its own — so a
+  // working session in a bare TUI is invisible to the island no matter what the
+  // adapter does. `opencode attach` is what puts the TUI on the watched server.
+  opencode: {
+    name: "OpenCode",
+    color: "#8A8F98",
+    how: "opencode serve --port 54321, then opencode attach http://127.0.0.1:54321",
+  },
   hermes: { name: "Hermes", color: "#FFD700", how: "hermes gateway run" },
   freebuff: { name: "Freebuff", color: "#34D399", how: "run freebuff and send a message" },
 };

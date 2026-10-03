@@ -378,3 +378,38 @@ menipu:
   tetap ada di `$XDG_RUNTIME_DIR/coucou/coucou.sock` dan `-S` tetap match, padahal
   `connect()` dapat `ECONNREFUSED`. Semua probe harus connect dulu, bukan hanya
   cek `-S`.
+
+### Tiga hal yang perlu diketahui sebelum Claimant percaya pada angka atau pada badge
+
+**1 · "Hidden" tidak bisa diukur selama ada agent hidup.** `docs/SPEC.md` §3.1: tidak ada
+yang jalan → `hidden`. Selama OpenCode/Hermes/Freebuff tersambung, island memang dalam mode
+`compact`, jadi angka "0 % CPU saat hidden" tidak bisa diambil tanpa mematikan ketiga agent
+yang sedang dipakai. Yang bisa diukur: **compact 2,0 % dari satu core** (proses utama
++ seluruh `WebKitWebProcess`, jendela 6 detik, dua kali), dan **PSS 72 MB untuk proses utama**
+(72 + 135 + 73 MB PSS untuk ketiga proses WebKit; menjumlahkan RSS akan menghitung ulang
+halaman yang shared). Batas `< 100 Mo` di §12 adalah angka Mac untuk satu proses —
+WebKitGTK tidak bertambah ringan seperti itu, dan angka di atas yang jujur.
+
+**2 · Tombol approval tidak punya tombol keyboard, dan itu disengaja.** Island adalah
+`WindowTypeHint::Dock` + `accept_focus(false)`, jadi *tidak ada* keystroke yang bisa
+mencapainya — termasuk `Escape`. Tiga cara sudah dicoba dan ketiganya gagal di desktop ini:
+global X11 `XGrabKey` di root window (semua kandidat `Alt+N/Y/A`, `Ctrl+Alt+N/Y/A`,
+`Alt+1/2/3` mengembalikan `rc=1`), `accept_focus(true)` + `set_focus()` (Muffin tidak
+mengaktifkan Dock window), dan `WindowTypeHint::Dialog` sementara selama kartu hidup (juga
+ditolak). Karena itu badge `N` / `Y` / `A` **dihapus**, bukan ditinggal sebagai hiasan.
+`xdotool windowfocus` *bisa* memaksa fokus di level X, tapi tanpa aktivasi WM WebKit tidak
+memberi page DOM focus — itu sebabnya `Escape` pun tidak bekerja.
+
+**3 · `opencode serve` bukan TUI-nya.** `opencode serve --port 54321` menjalankan *server
+terpisah* dari yang dipakai TUI `opencode` biasa, jadi sesi yang sedang bekerja di TUI itu
+tidak terlihat oleh adapter sama sekali — `/event` hanya mengeluarkan `server.connected` lalu
+hening. Agar island bisa melihatnya, jalankan:
+
+```bash
+opencode serve --port 54321          # di satu tab
+opencode attach http://127.0.0.1:54321  # TUI yang mau dilihat Coucou
+```
+
+Ini bukan tebakan: `opencode --help` mencantumkan `attach <url>`, dan `/session` di server
+:54321 sama sekali tidak memuat direktori `/media/abelion/Isaf/ican/project/abelink` yang
+sedang membangun di tab sebelah.

@@ -87,23 +87,34 @@ class SoundEngine {
   }
 
   setVolume(v: number) {
+    // SPEC §9 pins the *Mac* player at 0–0.2 and a 0.12 default. Those numbers
+    // only made sense against AVAudioPlayer and WAVs rendered at gain ×6; on
+    // Linux they put every sound at a fifth of the mixer's own ceiling, which is
+    // why "max" was inaudible. The Linux scale is this one, and docs/LINUX.md
+    // records the deviation.
     this.volume = Math.max(0, Math.min(1, v));
     if (this.master) this.master.gain.value = this.gainFor(this.volume);
   }
 
   /**
-   * Slider 0–1 → gain, and gain goes past 1.
+   * Slider 0–1 → gain, and gain goes well past 1.
    *
    * A Web Audio gain of 1 means "as loud as the system's own maximum", which made
-   * Coucou at 100% no louder than the laptop at 100% — the thing nobody wants
-   * from a notifier across a desk. The curve tops out at 2.4× (about +7.6 dB),
-   * so Coucou at maximum lands roughly where the device does with a bit of headroom
-   * still available, and a limiter downstream keeps the peaks clean. It is a
-   * curve rather than a straight scale so the quiet half of the slider stays
-   * quiet instead of everything above the middle being the same loud.
+   * Coucou at 100% no louder than the laptop at 100% — so the only way to hear
+   * it was to have the system volume up, which is exactly what a notifier should
+   * not need. The target is the opposite: Coucou at max, with the device turned
+   * *down*, should be as loud as Coucou at max with the device at max.
+   *
+   * That means compensating for the system mixer: at 30% the mixer passes roughly
+   * 0.3 of the amplitude, so the peak gain is 1 / 0.3 ≈ 3.3. It is set a little
+   * above that (4.0 ≈ +12 dB) so a device parked at 25% still lands on top of
+   * the full-volume result, and the limiter downstream keeps the peaks clean
+   * instead of clipping them. The curve is not linear: above the midpoint the
+   * slider is where it needs to be sensitive, and below it, quiet should stay
+   * quiet.
    */
   private gainFor(v: number): number {
-    return Math.pow(v, 1.6) * 2.4;
+    return Math.pow(v, 1.6) * 4;
   }
 
   setEnabled(on: boolean) {
