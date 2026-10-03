@@ -110,10 +110,12 @@ const APPROVAL_FIELDS = [
 
 /**
  * The text of an AskUserQuestion, or null when this is not one. It arrives as a
- * PermissionRequest because that is the only hook event Claude Code offers, but
- * there is nothing to approve: the answer is a multiple choice the protocol cannot
- * carry, so the card has to show the question itself. Both shapes are accepted
- * because only one of them is documented.
+ * PermissionRequest because that is the only hook event this relay reads, and
+ * there is nothing to approve: the answer is a multiple choice and this relay
+ * only ever says `allow` or `deny`, so the card shows the question and points at
+ * the terminal. Upstream carries the answer (#165 — a PreToolUse hook with `--ask`
+ * and a 125 s wait); that is the port that would make it answerable here. Both
+ * shapes are accepted because only one of them is documented.
  */
 function questionText(tool: string, input: Record<string, unknown>): string | null {
   if (tool !== "AskUserQuestion") return null;

@@ -355,9 +355,10 @@ function buildApproval(actions: ViewActions): ViewHost {
       // were all tried. A letter on a button that cannot be pressed is a promise
       // the app breaks exactly when the user needs it to hold.
       //
-      // A question cannot be answered from here at all, so it gets one button and
-      // a way home. An approval gets the three choices it actually has: reject it,
-      // allow once, or stop asking for the rest of the session.
+      // A question cannot be answered from here yet — upstream carries it (#165),
+      // this relay does not — so it gets one button and a way home. An approval
+      // gets the three choices it actually has: reject it, allow once, or stop
+      // asking for the rest of the session.
       row.append(
         btn(isQuestion ? "Cancel" : "Reject", "secondary", () => actions.decide("deny")),
         ...(isQuestion
